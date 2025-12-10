@@ -10,6 +10,9 @@ IMAGE_STORE_DIR = "./downloaded_images"
 # Scraping Limits
 MAX_PRODUCTS_TO_SCRAPE = 10
 
+# Scraping Mode: "silent", "detailed", or "debug"
+MODE = "detailed"
+
 # --- CSS SELECTORS ---
 
 # Search Page

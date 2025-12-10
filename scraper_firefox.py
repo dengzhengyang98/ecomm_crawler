@@ -44,8 +44,11 @@ def clean_image_url(url):
     if not url: return None
     # Remove query params first (e.g., ?width=800&height=800&hash=1600)
     base_url = url.split("?")[0]
-    # For gallery images, remove suffixes like _main, _profile if they exist
-    # Check if URL ends with _main.jpg, _profile.jpg, etc. and remove the suffix
+    # Remove trailing patterns like _220x220q75.jpg_.avif, _main.jpg, _profile.jpg, etc.
+    # Pattern: _[dimensions][quality][format].[ext]_.avif or similar
+    # Example: https://ae-pic-a1.aliexpress-media.com/kf/S2041dd6b7379433da5ed1bf55ccdbef7s.jpg_220x220q75.jpg_.avif
+    # Should become: https://ae-pic-a1.aliexpress-media.com/kf/S2041dd6b7379433da5ed1bf55ccdbef7s.jpg
+    base_url = re.sub(r'_\d+x\d+[^.]*\.(jpg|jpeg|png|webp)(_\.avif)?$', '', base_url, flags=re.IGNORECASE)
     base_url = re.sub(r'_main\.(jpg|jpeg|png|webp)$', r'.\1', base_url, flags=re.IGNORECASE)
     base_url = re.sub(r'_profile\.(jpg|jpeg|png|webp)$', r'.\1', base_url, flags=re.IGNORECASE)
     # Handle protocol-relative URLs
@@ -76,8 +79,12 @@ def download_image(url, folder_path, filename):
 
 # --- MAIN SCRAPER CLASS ---
 class AliExpressScraper:
-    def __init__(self, debug_mode=False):
-        self.debug_mode = debug_mode
+    def __init__(self, mode=None):
+        # Get mode from config if not provided, default to "detailed"
+        self.mode = mode or getattr(config, 'MODE', 'detailed')
+        self.debug_mode = (self.mode == "debug")
+        self.silent_mode = (self.mode == "silent")
+        self.detailed_mode = (self.mode == "detailed")
         try:
             self.dynamodb = boto3.resource('dynamodb', region_name=config.AWS_REGION)
             self.table = self.dynamodb.Table(config.DYNAMODB_TABLE)
@@ -332,13 +339,17 @@ class AliExpressScraper:
         # 1. Generate Unique ID (UUID) instead of Hash
         p_id = generate_id()
 
-        print(f"\n--- SCRAPING: {p_id} ---")
-        print(f"    URL: {url}")
+        if not self.silent_mode:
+            print(f"\n--- SCRAPING: {p_id} ---")
+            print(f"    URL: {url}")
+        else:
+            print(f"Scraping: {url}")
         self.driver.get(url)
 
         # CAPTCHA Check
         if len(self.driver.find_elements(By.ID, "baxia-dialog-content")) > 0:
-            print("⚠️ CAPTCHA detected. Pausing for manual fix...")
+            if not self.silent_mode:
+                print("⚠️ CAPTCHA detected. Pausing for manual fix...")
             input("Press ENTER after solving...")
 
         # 2. SCROLL & EXPAND DESCRIPTION
@@ -350,7 +361,8 @@ class AliExpressScraper:
             # First check if button exists without waiting
             view_more_btn = self.driver.find_elements(By.CSS_SELECTOR, config.PRODUCT_DESC_VIEW_MORE_BTN)
             if view_more_btn:
-                print("   [+] Found 'View More' button, scrolling to it...")
+                if self.detailed_mode or self.debug_mode:
+                    print("   [+] Found 'View More' button, scrolling to it...")
                 # Scroll the button into view
                 self.driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", view_more_btn[0])
                 time.sleep(1)
@@ -359,7 +371,8 @@ class AliExpressScraper:
                 clickable_btn = self.wait.until(
                     EC.element_to_be_clickable((By.CSS_SELECTOR, config.PRODUCT_DESC_VIEW_MORE_BTN))
                 )
-                print("   [+] Clicking 'View More' button...")
+                if self.detailed_mode or self.debug_mode:
+                    print("   [+] Clicking 'View More' button...")
                 self.driver.execute_script("arguments[0].click();", clickable_btn)
                 time.sleep(3)  # Wait longer for content to load
                 
@@ -368,13 +381,17 @@ class AliExpressScraper:
                     self.wait.until(
                         EC.presence_of_element_located((By.CSS_SELECTOR, config.PRODUCT_SEO_DESCRIPTION))
                     )
-                    print("   [+] SEO description loaded after clicking 'View More'")
+                    if self.detailed_mode or self.debug_mode:
+                        print("   [+] SEO description loaded after clicking 'View More'")
                 except:
-                    print("   [-] SEO description not found after clicking (may already be visible)")
+                    if self.detailed_mode or self.debug_mode:
+                        print("   [-] SEO description not found after clicking (may already be visible)")
             else:
-                print("   [-] No 'View More' button found (content might be short or already expanded).")
+                if self.detailed_mode or self.debug_mode:
+                    print("   [-] No 'View More' button found (content might be short or already expanded).")
         except Exception as e:
-            print(f"   [!] Error with 'View More' button: {e}")
+            if self.detailed_mode or self.debug_mode:
+                print(f"   [!] Error with 'View More' button: {e}")
 
         # Scroll further down to ensure images lazy load
         self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight / 1.5);")
@@ -396,11 +413,11 @@ class AliExpressScraper:
             if response == 'y':
                 self.debug_interactive_selector()
 
+        # Initialize data dict with ordered keys (product_id, title, url first)
         data = {
             'product_id': p_id,
+            'title': None,  # Will be set later
             'url': url,
-            'status': 'scraped',
-            'timestamp': str(int(time.time()))
         }
 
         try:
@@ -434,10 +451,6 @@ class AliExpressScraper:
                     clean_src = clean_image_url(raw_src)
                     if clean_src and clean_src not in gallery_urls:
                         gallery_urls.append(clean_src)
-
-                if gallery_urls:
-                    data['main_image_path'] = download_image(gallery_urls[0], config.IMAGE_STORE_DIR,
-                                                             f"{p_id}_main.jpg")
                 data['gallery_images'] = gallery_urls
             except Exception as e:
                 data['gallery_images'] = []
@@ -503,7 +516,8 @@ class AliExpressScraper:
                             shadow_root = shadow_host.shadow_root
                             if shadow_root:
                                 shadow_dom_found = True
-                                print("   [+] Shadow DOM detected! Extracting from Shadow DOM...")
+                                if self.detailed_mode or self.debug_mode:
+                                    print("   [+] Shadow DOM detected! Extracting from Shadow DOM...")
                                 
                                 if self.debug_mode:
                                     # Check what's inside shadow root
@@ -534,7 +548,8 @@ class AliExpressScraper:
                                         shadow_text = shadow_richtext.text
                                         if shadow_text and shadow_text.strip():
                                             desc_text_parts.append(shadow_text)
-                                            print(f"   [+] Extracted {len(shadow_text)} chars of text from Shadow DOM")
+                                            if self.detailed_mode or self.debug_mode:
+                                                print(f"   [+] Extracted {len(shadow_text)} chars of text from Shadow DOM")
                                     except Exception as e:
                                         if self.debug_mode:
                                             print(f"   [!] Error extracting text from Shadow DOM: {e}")
@@ -542,7 +557,8 @@ class AliExpressScraper:
                                     # Extract images from Shadow DOM richtext
                                     try:
                                         shadow_imgs = shadow_richtext.find_elements(By.CSS_SELECTOR, "img")
-                                        print(f"   [+] Found {len(shadow_imgs)} images in Shadow DOM richtext")
+                                        if self.detailed_mode or self.debug_mode:
+                                            print(f"   [+] Found {len(shadow_imgs)} images in Shadow DOM richtext")
                                         
                                         for idx, img in enumerate(shadow_imgs):
                                             try:
@@ -554,7 +570,8 @@ class AliExpressScraper:
                                                     clean_src = clean_image_url(src)
                                                     if clean_src and clean_src not in desc_img_urls:
                                                         desc_img_urls.append(clean_src)
-                                                        print(f"      [+] Extracted image {idx + 1}: {clean_src[:60]}...")
+                                                        if self.detailed_mode or self.debug_mode:
+                                                            print(f"      [+] Extracted image {idx + 1}: {clean_src[:60]}...")
                                             except Exception as img_e:
                                                 if self.debug_mode:
                                                     print(f"      [!] Error extracting image {idx + 1}: {img_e}")
@@ -566,7 +583,8 @@ class AliExpressScraper:
                                         # Fallback: try finding images directly in shadow root
                                         try:
                                             shadow_imgs = shadow_root.find_elements(By.CSS_SELECTOR, "img.detail-desc-decorate-image, img[slate-data-type='image']")
-                                            print(f"   [+] Fallback: Found {len(shadow_imgs)} images in Shadow DOM")
+                                            if self.detailed_mode or self.debug_mode:
+                                                print(f"   [+] Fallback: Found {len(shadow_imgs)} images in Shadow DOM")
                                             for idx, img in enumerate(shadow_imgs):
                                                 try:
                                                     src = img.get_attribute("src")
@@ -574,7 +592,8 @@ class AliExpressScraper:
                                                         clean_src = clean_image_url(src)
                                                         if clean_src and clean_src not in desc_img_urls:
                                                             desc_img_urls.append(clean_src)
-                                                            print(f"      [+] Extracted image {idx + 1}: {clean_src[:60]}...")
+                                                            if self.detailed_mode or self.debug_mode:
+                                                                print(f"      [+] Extracted image {idx + 1}: {clean_src[:60]}...")
                                                 except:
                                                     continue
                                         except:
@@ -631,7 +650,8 @@ class AliExpressScraper:
                         
                         # Extract Images from Rich Text (Regular DOM)
                         imgs = search_container.find_elements(By.TAG_NAME, "img")
-                        print(f"   [+] Found {len(imgs)} image elements in description (Regular DOM)")
+                        if self.detailed_mode or self.debug_mode:
+                            print(f"   [+] Found {len(imgs)} image elements in description (Regular DOM)")
                         
                         for idx, img in enumerate(imgs):
                             try:
@@ -648,7 +668,8 @@ class AliExpressScraper:
                                     clean_src = clean_image_url(src)
                                     if clean_src and clean_src not in desc_img_urls:
                                         desc_img_urls.append(clean_src)
-                                        print(f"      [+] Extracted image {idx + 1}: {clean_src[:60]}...")
+                                        if self.detailed_mode or self.debug_mode:
+                                            print(f"      [+] Extracted image {idx + 1}: {clean_src[:60]}...")
                             except Exception as img_e:
                                 if self.debug_mode:
                                     print(f"      [!] Error extracting image {idx + 1}: {img_e}")
@@ -660,7 +681,8 @@ class AliExpressScraper:
                     seo_text = seo_desc_container[0].text
                     if seo_text and seo_text.strip():
                         desc_text_parts.append(seo_text)
-                        print("   [+] Extracted SEO description text")
+                        if self.detailed_mode or self.debug_mode:
+                            print("   [+] Extracted SEO description text")
 
                 data['description_text'] = "\n\n".join(desc_text_parts)
                 data['description_images'] = desc_img_urls
@@ -679,7 +701,8 @@ class AliExpressScraper:
                 if sellpoints_container:
                     # Find all <li> elements inside the sellpoints container
                     list_items = sellpoints_container[0].find_elements(By.TAG_NAME, "li")
-                    print(f"   [+] Found {len(list_items)} sellpoint(s)")
+                    if self.detailed_mode or self.debug_mode:
+                        print(f"   [+] Found {len(list_items)} sellpoint(s)")
                     
                     for idx, li in enumerate(list_items):
                         try:
@@ -700,7 +723,8 @@ class AliExpressScraper:
                                 continue
                     
                     data['sellpoints'] = sellpoints
-                    print(f"   [+] Extracted {len(sellpoints)} sellpoint(s)")
+                    if self.detailed_mode or self.debug_mode:
+                        print(f"   [+] Extracted {len(sellpoints)} sellpoint(s)")
                 else:
                     data['sellpoints'] = []
             except Exception as e:
@@ -710,22 +734,39 @@ class AliExpressScraper:
                     traceback.print_exc()
                 data['sellpoints'] = []
 
+            # Add remaining fields in desired order
+            data['current_price'] = data.get('current_price', 'N/A')
+            data['original_price'] = data.get('original_price', 'N/A')
+            data['gallery_images'] = data.get('gallery_images', [])
+            data['skus'] = data.get('skus', [])
+            data['description_text'] = data.get('description_text', '')
+            data['description_images'] = data.get('description_images', [])
+            data['sellpoints'] = data.get('sellpoints', [])
+            data['status'] = 'scraped'
+            data['timestamp'] = str(int(time.time()))
+
             # --- LOGGING ---
-            print(f"   Title: {data.get('title')[:30]}...")
-            print(f"   Price: {data.get('current_price')}")
-            print(f"   Desc Text Length: {len(data.get('description_text', ''))} chars")
-            print(f"   Desc Images Found: {len(data.get('description_images', []))}")
-            print(f"   Sellpoints Found: {len(data.get('sellpoints', []))}")
+            if self.detailed_mode or self.debug_mode:
+                print(f"   Title: {data.get('title')[:30]}...")
+                print(f"   Price: {data.get('current_price')}")
+                print(f"   Desc Text Length: {len(data.get('description_text', ''))} chars")
+                print(f"   Desc Images Found: {len(data.get('description_images', []))}")
+                print(f"   Sellpoints Found: {len(data.get('sellpoints', []))}")
 
             # --- SAVE ---
             if self.table:
                 self.table.put_item(Item=data)
-                print("💾 Saved to DynamoDB.")
+                if not self.silent_mode:
+                    print("💾 Saved to DynamoDB.")
             else:
-                print("💾 (Mock) Saved to DB.")
+                if not self.silent_mode:
+                    print("💾 (Mock) Saved to DB.")
 
         except Exception as e:
-            print(f"❌ Error scraping details: {e}")
+            if not self.silent_mode:
+                print(f"❌ Error scraping details: {e}")
+            else:
+                print(f"Error: {e}")
     
 
     def scrape_search_results(self):
@@ -738,7 +779,8 @@ class AliExpressScraper:
         input("3. Press ENTER in this console when the results page is ready to be scraped...")
         print("#####################################################\n")
 
-        print("🔍 Starting scraping of current page...")
+        if not self.silent_mode:
+            print("🔍 Starting scraping of current page...")
 
         # Scroll to ensure elements load
         self.driver.execute_script("window.scrollBy(0, 800);")
@@ -753,29 +795,40 @@ class AliExpressScraper:
                 if raw_href and "/item/" in raw_href:
                     links_found.append(clean_url(raw_href))
         except Exception as e:
-            print(f"❌ DEBUG: Error finding elements: {e}")
+            if not self.silent_mode:
+                print(f"❌ Error finding elements: {e}")
 
         unique_links = list(set(links_found))
 
-        print(f"✅ DEBUG: Found {len(unique_links)} unique item links on the page.")
+        if self.detailed_mode or self.debug_mode:
+            print(f"✅ Found {len(unique_links)} unique item links on the page.")
         targets = unique_links[:config.MAX_PRODUCTS_TO_SCRAPE]
-        print(f"🎯 DEBUG: Targeting the following {len(targets)} links:")
-        for link in targets:
-            print(f"   -> {link}")
+        if self.detailed_mode or self.debug_mode:
+            print(f"🎯 Targeting the following {len(targets)} links:")
+            for link in targets:
+                print(f"   -> {link}")
 
         for link in targets:
             self.scrape_product_details(link)
 
             # IMPROVEMENT: Add randomized delay between pages
             delay = random.uniform(2, 5)
-            print(f"   (Pausing for {delay:.2f} seconds to mimic human behavior...)")
+            if self.detailed_mode or self.debug_mode:
+                print(f"   (Pausing for {delay:.2f} seconds to mimic human behavior...)")
             time.sleep(delay)
 
 if __name__ == "__main__":
     import sys
-    # Enable debug mode if --debug flag is passed
-    debug_mode = "--debug" in sys.argv or "-d" in sys.argv
-    bot = AliExpressScraper(debug_mode=debug_mode)
+    # Allow override via command line, otherwise use config.MODE
+    mode = None
+    if "--debug" in sys.argv or "-d" in sys.argv:
+        mode = "debug"
+    elif "--silent" in sys.argv or "-s" in sys.argv:
+        mode = "silent"
+    elif "--detailed" in sys.argv:
+        mode = "detailed"
+    
+    bot = AliExpressScraper(mode=mode)
     # Test Link
     # test_url = "https://www.aliexpress.com/item/1005009065657707.html"
     # bot.scrape_product_details(test_url)
