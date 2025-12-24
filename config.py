@@ -4,6 +4,22 @@
 AWS_REGION = "us-west-2"
 DYNAMODB_TABLE = "AliExpressProducts"
 
+# AWS Cognito Configuration
+COGNITO_USER_POOL_ID = "us-west-2_sBUl6DYed"
+COGNITO_CLIENT_ID = "17f5ud14282oq1hitnhvno647q"
+COGNITO_REGION = "us-west-2"
+
+# AWS Cognito Identity Pool Configuration (for DynamoDB access)
+# Get this from AWS Console: Cognito > Federated Identities > Your Identity Pool
+# Format: "us-west-2:XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX"
+COGNITO_IDENTITY_POOL_ID = "us-west-2:58d92f54-da0e-4ecd-bc5e-ec0c3c64fb66"  # TODO: Fill in your Identity Pool ID
+
+# Keyring service name for storing tokens securely
+KEYRING_SERVICE_NAME = "EcommCrawler"
+
+# Session validation interval (in milliseconds) - 5 minutes = 300,000 ms
+SESSION_VALIDATION_INTERVAL_MS = 300000
+
 # Local Storage
 IMAGE_STORE_DIR = "./downloaded_images"
 

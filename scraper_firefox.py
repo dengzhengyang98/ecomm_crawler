@@ -8,6 +8,9 @@ import random
 import uuid  # Added for unique IDs
 import re
 import urllib.parse
+import platform
+import subprocess
+import shutil
 from selenium import webdriver
 from selenium.webdriver.firefox.service import Service
 from selenium.webdriver.firefox.options import Options
@@ -43,6 +46,51 @@ if not os.path.exists(PROFILE_DIR):
 def ensure_dir(path: str):
     if not os.path.exists(path):
         os.makedirs(path, exist_ok=True)
+
+
+def get_geckodriver_path():
+    """
+    Get geckodriver path, ensuring the correct architecture for the system.
+    On Apple Silicon (ARM64) Macs, ensures we get the ARM64 version.
+    """
+    try:
+        # Get system architecture
+        machine = platform.machine().lower()
+        is_arm64_mac = (platform.system() == 'Darwin' and machine in ('arm64', 'aarch64'))
+        
+        # Install geckodriver
+        driver_path = GeckoDriverManager().install()
+        
+        # If on ARM64 Mac, verify the binary architecture
+        if is_arm64_mac and os.path.exists(driver_path):
+            try:
+                # Check if the binary is actually ARM64
+                result = subprocess.run(['file', driver_path], 
+                                      capture_output=True, text=True, timeout=5)
+                if result.returncode == 0:
+                    file_output = result.stdout.lower()
+                    # If it's x86_64 on ARM64, we need to force re-download
+                    if 'x86_64' in file_output and 'arm64' not in file_output:
+                        print(f"⚠️ Detected x86_64 geckodriver on ARM64 Mac. Removing cache to force re-download...")
+                        # Remove the cached driver directory to force re-download
+                        driver_dir = os.path.dirname(driver_path)
+                        if os.path.exists(driver_dir):
+                            try:
+                                shutil.rmtree(os.path.dirname(driver_dir))  # Remove version directory
+                                print(f"✅ Cache cleared. Re-downloading correct architecture...")
+                                # Re-install to get correct architecture
+                                driver_path = GeckoDriverManager().install()
+                            except Exception as e:
+                                print(f"⚠️ Could not clear cache: {e}")
+            except (subprocess.TimeoutExpired, FileNotFoundError, Exception) as e:
+                # file command might not be available, continue with downloaded driver
+                pass
+        
+        return driver_path
+    except Exception as e:
+        print(f"⚠️ Error getting geckodriver: {e}")
+        # Fallback to default behavior
+        return GeckoDriverManager().install()
 
 
 # --- UTILITIES ---
@@ -118,10 +166,17 @@ def calculate_amazon_price_stats(amazon_prices: dict, aliexpress_price: str) -> 
     """
     Calculate Amazon price statistics from the competitor prices map.
     
+    Args:
+        amazon_prices: Dict mapping product titles to price info.
+            Can be either old format: {"Product A": "$19.99"}
+            Or new format: {"Product A": {"price": "$19.99", "url": "https://..."}}
+        aliexpress_price: The AliExpress price string
+    
     Returns dict with:
         - amazon_avg_price: Average of all Amazon prices
         - amazon_min_price: Minimum Amazon price
         - amazon_min_price_product: Product name with minimum price
+        - amazon_min_price_product_url: URL of the product with minimum price
         - ali_express_rec_price: Recommended AliExpress price (same as input for now)
     """
     if not amazon_prices:
@@ -129,27 +184,40 @@ def calculate_amazon_price_stats(amazon_prices: dict, aliexpress_price: str) -> 
             "amazon_avg_price": "N/A",
             "amazon_min_price": "N/A",
             "amazon_min_price_product": "N/A",
+            "amazon_min_price_product_url": "",
             "ali_express_rec_price": aliexpress_price or "N/A"
         }
     
-    # Parse all prices
+    # Parse all prices - handle both old and new format
     valid_prices = []
     min_price = float('inf')
     min_product = ""
+    min_product_url = ""
     
-    for product, price in amazon_prices.items():
-        price_float = parse_price_to_float(price)
+    for product, price_info in amazon_prices.items():
+        # Handle new format: {"price": "$19.99", "url": "..."}
+        if isinstance(price_info, dict):
+            price_str = price_info.get("price", "N/A")
+            url = price_info.get("url", "")
+        else:
+            # Handle old format: just the price string
+            price_str = price_info
+            url = ""
+        
+        price_float = parse_price_to_float(price_str)
         if price_float > 0:
             valid_prices.append(price_float)
             if price_float < min_price:
                 min_price = price_float
                 min_product = product
+                min_product_url = url
     
     if not valid_prices:
         return {
             "amazon_avg_price": "N/A",
             "amazon_min_price": "N/A",
             "amazon_min_price_product": "N/A",
+            "amazon_min_price_product_url": "",
             "ali_express_rec_price": aliexpress_price or "N/A"
         }
     
@@ -159,13 +227,14 @@ def calculate_amazon_price_stats(amazon_prices: dict, aliexpress_price: str) -> 
         "amazon_avg_price": f"${avg_price:,.2f}",
         "amazon_min_price": f"${min_price:,.2f}",
         "amazon_min_price_product": min_product,
+        "amazon_min_price_product_url": min_product_url,
         "ali_express_rec_price": aliexpress_price or "N/A"
     }
 
 
 def search_amazon_prices_with_driver(driver, query: str, max_results: int = 10) -> dict:
     """
-    Search Amazon for a product using existing Selenium driver and return a map of product titles to prices.
+    Search Amazon for a product using existing Selenium driver and return a map of product titles to price info.
     
     Args:
         driver: Selenium WebDriver instance
@@ -173,7 +242,8 @@ def search_amazon_prices_with_driver(driver, query: str, max_results: int = 10) 
         max_results: Maximum number of results to return (default 10)
         
     Returns:
-        Dict mapping product titles to prices, e.g. {"Product A": "$19.99", "Product B": "$25.00"}
+        Dict mapping product titles to price info, e.g. 
+        {"Product A": {"price": "$19.99", "url": "https://amazon.com/dp/..."}}
     """
     if not query or not driver:
         return {}
@@ -197,11 +267,32 @@ def search_amazon_prices_with_driver(driver, query: str, max_results: int = 10) 
             
             for elem in result_elements[:max_results]:
                 try:
-                    # Get title
-                    title_elem = elem.find_elements(By.CSS_SELECTOR, "h2 a span, .a-size-medium.a-text-normal, .a-size-base-plus.a-text-normal")
-                    if not title_elem:
-                        continue
-                    title = title_elem[0].text.strip()
+                    # Get title and URL from the title link
+                    title_link = elem.find_elements(By.CSS_SELECTOR, "h2 a.a-link-normal")
+                    if not title_link:
+                        # Fallback to other link patterns
+                        title_link = elem.find_elements(By.CSS_SELECTOR, "a.a-link-normal.s-no-outline")
+                    
+                    title = ""
+                    url = ""
+                    
+                    if title_link:
+                        # Get URL from the link
+                        href = title_link[0].get_attribute("href")
+                        if href:
+                            url = href
+                        # Get title from span inside the link or the link text
+                        title_span = title_link[0].find_elements(By.CSS_SELECTOR, "span")
+                        if title_span:
+                            title = title_span[0].text.strip()
+                        else:
+                            title = title_link[0].text.strip()
+                    
+                    # Fallback: try other title selectors if no title found
+                    if not title:
+                        title_elem = elem.find_elements(By.CSS_SELECTOR, "h2 a span, .a-size-medium.a-text-normal, .a-size-base-plus.a-text-normal")
+                        if title_elem:
+                            title = title_elem[0].text.strip()
                     
                     # Get price
                     price = "N/A"
@@ -218,7 +309,7 @@ def search_amazon_prices_with_driver(driver, query: str, max_results: int = 10) 
                             price = f"${whole}.{frac}"
                     
                     if title and len(results) < max_results:
-                        results[title] = price
+                        results[title] = {"price": price, "url": url}
                         
                 except Exception:
                     continue
@@ -243,11 +334,17 @@ class AliExpressScraper:
         self.detailed_mode = (self.mode == "detailed")
         self.resume_event = resume_event
         try:
-            self.dynamodb = boto3.resource('dynamodb', region_name=config.AWS_REGION)
-            self.table = self.dynamodb.Table(config.DYNAMODB_TABLE)
+            # Try to use Cognito Identity Pool credentials if authenticated
+            from auth_service import get_dynamodb_resource
+            self.dynamodb = get_dynamodb_resource()
+            if self.dynamodb:
+                self.table = self.dynamodb.Table(config.DYNAMODB_TABLE)
+            else:
+                raise Exception("Failed to get DynamoDB resource")
         except Exception as e:
             print(f"⚠️ Warning: DynamoDB connection failed ({e}). Running in local-only mode.")
             self.table = None
+            self.dynamodb = None
         
         # Ensure cache directories
         ensure_dir(CACHE_DIR)
@@ -266,7 +363,8 @@ class AliExpressScraper:
         options.set_preference("geo.enabled", False)
 
         print(f"🚀 Launching Firefox with profile: {PROFILE_DIR}")
-        service = Service(GeckoDriverManager().install())
+        geckodriver_path = get_geckodriver_path()
+        service = Service(geckodriver_path)
         self.driver = webdriver.Firefox(service=service, options=options)
         self.wait = WebDriverWait(self.driver, 10)
     
@@ -984,7 +1082,8 @@ class AliExpressScraper:
                         amazon_prices = search_amazon_prices_with_driver(self.driver, product_title, max_results=max_amazon_results)
                         if amazon_prices and not self.silent_mode:
                             print(f"   ✅ Found {len(amazon_prices)} Amazon results")
-                            for title, price in list(amazon_prices.items())[:3]:
+                            for title, price_info in list(amazon_prices.items())[:3]:
+                                price = price_info.get("price", price_info) if isinstance(price_info, dict) else price_info
                                 print(f"      - {price}: {title[:40]}...")
                 except Exception as e:
                     if not self.silent_mode:
@@ -1011,7 +1110,8 @@ class AliExpressScraper:
                     print(f"\n🛒 Amazon Competitor Prices ({len(amazon_prices)} results):")
                     print("-" * 100)
                     if amazon_prices:
-                        for idx, (title, price) in enumerate(amazon_prices.items(), 1):
+                        for idx, (title, price_info) in enumerate(amazon_prices.items(), 1):
+                            price = price_info.get("price", price_info) if isinstance(price_info, dict) else price_info
                             print(f"{idx:2}. [{price:>12}] {title}")
                     else:
                         print("   (No Amazon results found)")
@@ -1049,6 +1149,7 @@ class AliExpressScraper:
                 data["amazon_avg_price"] = price_stats["amazon_avg_price"]
                 data["amazon_min_price"] = price_stats["amazon_min_price"]
                 data["amazon_min_price_product"] = price_stats["amazon_min_price_product"]
+                data["amazon_min_price_product_url"] = price_stats["amazon_min_price_product_url"]
                 data["ali_express_rec_price"] = price_stats["ali_express_rec_price"]
                 
                 if not self.silent_mode:
@@ -1064,6 +1165,7 @@ class AliExpressScraper:
                 data["amazon_avg_price"] = price_stats["amazon_avg_price"]
                 data["amazon_min_price"] = price_stats["amazon_min_price"]
                 data["amazon_min_price_product"] = price_stats["amazon_min_price_product"]
+                data["amazon_min_price_product_url"] = price_stats["amazon_min_price_product_url"]
                 data["ali_express_rec_price"] = price_stats["ali_express_rec_price"]
 
             # --- DOWNLOAD IMAGES LOCALLY ---
