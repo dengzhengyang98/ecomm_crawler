@@ -1,11 +1,13 @@
 import time
 import hashlib
 import os
+import json
 import requests
 import boto3
 import random
 import uuid  # Added for unique IDs
 import re
+import urllib.parse
 from selenium import webdriver
 from selenium.webdriver.firefox.service import Service
 from selenium.webdriver.firefox.options import Options
@@ -20,10 +22,27 @@ try:
 except ImportError:
     pass
 
+# Image processing
+try:
+    from image_processor import process_product_images
+    IMAGE_PROCESSING_AVAILABLE = True
+except ImportError:
+    IMAGE_PROCESSING_AVAILABLE = False
+    print("⚠️ Image processor not available. Install with: pip install rembg pillow boto3")
+
+# Cache directories
+CACHE_DIR = os.path.join(os.getcwd(), "cache")
+PRODUCT_CACHE_DIR = os.path.join(CACHE_DIR, "products")
+IMAGE_CACHE_DIR = os.path.join(CACHE_DIR, "images")
+
 # --- CONSTANTS ---
 PROFILE_DIR = os.path.join(os.getcwd(), 'firefox_real_profile')
 if not os.path.exists(PROFILE_DIR):
     os.makedirs(PROFILE_DIR)
+
+def ensure_dir(path: str):
+    if not os.path.exists(path):
+        os.makedirs(path, exist_ok=True)
 
 
 # --- UTILITIES ---
@@ -59,8 +78,7 @@ def clean_image_url(url):
 
 def download_image(url, folder_path, filename):
     if not url: return None
-    if not os.path.exists(folder_path):
-        os.makedirs(folder_path)
+    ensure_dir(folder_path)
     try:
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:133.0) Gecko/20100101 Firefox/133.0"
@@ -77,20 +95,164 @@ def download_image(url, folder_path, filename):
     return None
 
 
+def random_wait(wait_range: tuple) -> float:
+    """Get a random wait time from config range and sleep."""
+    min_wait, max_wait = wait_range
+    delay = random.uniform(min_wait, max_wait)
+    time.sleep(delay)
+    return delay
+
+
+def parse_price_to_float(price_str: str) -> float:
+    """Parse a price string like '$1,234.56' to float. Returns 0 if invalid."""
+    if not price_str or price_str == "N/A":
+        return 0.0
+    try:
+        cleaned = price_str.replace("$", "").replace(",", "").strip()
+        return float(cleaned)
+    except (ValueError, TypeError):
+        return 0.0
+
+
+def calculate_amazon_price_stats(amazon_prices: dict, aliexpress_price: str) -> dict:
+    """
+    Calculate Amazon price statistics from the competitor prices map.
+    
+    Returns dict with:
+        - amazon_avg_price: Average of all Amazon prices
+        - amazon_min_price: Minimum Amazon price
+        - amazon_min_price_product: Product name with minimum price
+        - ali_express_rec_price: Recommended AliExpress price (same as input for now)
+    """
+    if not amazon_prices:
+        return {
+            "amazon_avg_price": "N/A",
+            "amazon_min_price": "N/A",
+            "amazon_min_price_product": "N/A",
+            "ali_express_rec_price": aliexpress_price or "N/A"
+        }
+    
+    # Parse all prices
+    valid_prices = []
+    min_price = float('inf')
+    min_product = ""
+    
+    for product, price in amazon_prices.items():
+        price_float = parse_price_to_float(price)
+        if price_float > 0:
+            valid_prices.append(price_float)
+            if price_float < min_price:
+                min_price = price_float
+                min_product = product
+    
+    if not valid_prices:
+        return {
+            "amazon_avg_price": "N/A",
+            "amazon_min_price": "N/A",
+            "amazon_min_price_product": "N/A",
+            "ali_express_rec_price": aliexpress_price or "N/A"
+        }
+    
+    avg_price = sum(valid_prices) / len(valid_prices)
+    
+    return {
+        "amazon_avg_price": f"${avg_price:,.2f}",
+        "amazon_min_price": f"${min_price:,.2f}",
+        "amazon_min_price_product": min_product,
+        "ali_express_rec_price": aliexpress_price or "N/A"
+    }
+
+
+def search_amazon_prices_with_driver(driver, query: str, max_results: int = 10) -> dict:
+    """
+    Search Amazon for a product using existing Selenium driver and return a map of product titles to prices.
+    
+    Args:
+        driver: Selenium WebDriver instance
+        query: The search query (product title)
+        max_results: Maximum number of results to return (default 10)
+        
+    Returns:
+        Dict mapping product titles to prices, e.g. {"Product A": "$19.99", "Product B": "$25.00"}
+    """
+    if not query or not driver:
+        return {}
+    
+    # NOTE: We don't store/restore original URL since we've already scraped the product
+    
+    try:
+        # Build Amazon search URL
+        encoded_query = urllib.parse.quote(query)
+        search_url = f"https://www.amazon.com/s?k={encoded_query}"
+        
+        driver.get(search_url)
+        time.sleep(2)  # Wait for page load
+        
+        results = {}
+        
+        # Find search result containers
+        try:
+            from selenium.webdriver.common.by import By
+            result_elements = driver.find_elements(By.CSS_SELECTOR, "[data-component-type='s-search-result']")
+            
+            for elem in result_elements[:max_results]:
+                try:
+                    # Get title
+                    title_elem = elem.find_elements(By.CSS_SELECTOR, "h2 a span, .a-size-medium.a-text-normal, .a-size-base-plus.a-text-normal")
+                    if not title_elem:
+                        continue
+                    title = title_elem[0].text.strip()
+                    
+                    # Get price
+                    price = "N/A"
+                    price_elem = elem.find_elements(By.CSS_SELECTOR, "span.a-price span.a-offscreen")
+                    if price_elem:
+                        price = price_elem[0].get_attribute("textContent").strip()
+                    else:
+                        # Try alternative price selectors
+                        price_whole = elem.find_elements(By.CSS_SELECTOR, "span.a-price-whole")
+                        price_frac = elem.find_elements(By.CSS_SELECTOR, "span.a-price-fraction")
+                        if price_whole:
+                            whole = price_whole[0].text.replace(",", "")
+                            frac = price_frac[0].text if price_frac else "00"
+                            price = f"${whole}.{frac}"
+                    
+                    if title and len(results) < max_results:
+                        results[title] = price
+                        
+                except Exception:
+                    continue
+                    
+        except Exception as e:
+            print(f"   [!] Error parsing Amazon results: {e}")
+        
+        return results
+        
+    except Exception as e:
+        print(f"   [!] Amazon search error: {e}")
+        return {}
+
+
 # --- MAIN SCRAPER CLASS ---
 class AliExpressScraper:
-    def __init__(self, mode=None):
+    def __init__(self, mode=None, resume_event=None):
         # Get mode from config if not provided, default to "detailed"
         self.mode = mode or getattr(config, 'MODE', 'detailed')
         self.debug_mode = (self.mode == "debug")
         self.silent_mode = (self.mode == "silent")
         self.detailed_mode = (self.mode == "detailed")
+        self.resume_event = resume_event
         try:
             self.dynamodb = boto3.resource('dynamodb', region_name=config.AWS_REGION)
             self.table = self.dynamodb.Table(config.DYNAMODB_TABLE)
         except Exception as e:
             print(f"⚠️ Warning: DynamoDB connection failed ({e}). Running in local-only mode.")
             self.table = None
+        
+        # Ensure cache directories
+        ensure_dir(CACHE_DIR)
+        ensure_dir(PRODUCT_CACHE_DIR)
+        ensure_dir(IMAGE_CACHE_DIR)
 
         options = Options()
         options.add_argument("-profile")
@@ -335,6 +497,58 @@ class AliExpressScraper:
                 print(f"   [!] Shadow DOM extraction failed: {e}")
             return "", []
 
+    def _check_and_handle_captcha(self) -> bool:
+        """
+        Check for CAPTCHA and pause if detected. Returns True if CAPTCHA was found and handled.
+        
+        Detects AliExpress CAPTCHA by checking for:
+        - J_MIDDLEWARE_FRAME_WIDGET class (main CAPTCHA overlay)
+        - baxia-dialog-content ID (alternative CAPTCHA dialog)
+        """
+        captcha_selectors = [
+            ".J_MIDDLEWARE_FRAME_WIDGET",  # Main AliExpress CAPTCHA overlay
+            "#baxia-dialog-content",        # Alternative CAPTCHA dialog
+            "div[class*='MIDDLEWARE_FRAME']",  # Partial class match
+        ]
+        
+        captcha_found = False
+        for selector in captcha_selectors:
+            try:
+                elements = self.driver.find_elements(By.CSS_SELECTOR, selector)
+                if elements and len(elements) > 0:
+                    # Check if the element is actually visible
+                    for el in elements:
+                        if el.is_displayed():
+                            captcha_found = True
+                            break
+                if captcha_found:
+                    break
+            except Exception:
+                continue
+        
+        if captcha_found:
+            if not self.silent_mode:
+                print("\n" + "="*60)
+                print("⚠️  CAPTCHA DETECTED! Scraping paused.")
+                print("="*60)
+                print("   Please solve the CAPTCHA in the browser.")
+            
+            if getattr(self, "resume_event", None):
+                print("   Click 'Resume' button in UI after solving...")
+                self.resume_event.clear()
+                self.resume_event.wait()
+            else:
+                input("   Press ENTER after solving CAPTCHA...")
+            
+            if not self.silent_mode:
+                print("✅ Resuming scraping...")
+            
+            # Wait a moment for page to stabilize after CAPTCHA
+            random_wait(getattr(config, 'WAIT_PAGE_LOAD', (1.0, 2.0)))
+            return True
+        
+        return False
+
     def scrape_product_details(self, url):
         # 1. Generate Unique ID (UUID) instead of Hash
         p_id = generate_id()
@@ -345,16 +559,19 @@ class AliExpressScraper:
         else:
             print(f"Scraping: {url}")
         self.driver.get(url)
+        
+        # Wait for page to load
+        random_wait(getattr(config, 'WAIT_PAGE_LOAD', (1.0, 2.0)))
 
-        # CAPTCHA Check
-        if len(self.driver.find_elements(By.ID, "baxia-dialog-content")) > 0:
-            if not self.silent_mode:
-                print("⚠️ CAPTCHA detected. Pausing for manual fix...")
-            input("Press ENTER after solving...")
+        # CAPTCHA Check - check immediately after page load
+        self._check_and_handle_captcha()
 
         # 2. SCROLL & EXPAND DESCRIPTION
         self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight / 3);")
-        time.sleep(1)
+        random_wait(getattr(config, 'WAIT_SCROLL', (0.3, 0.8)))
+        
+        # Check for CAPTCHA after scroll (can appear after any action)
+        self._check_and_handle_captcha()
 
         # Try to find and click "View More" button
         try:
@@ -365,7 +582,7 @@ class AliExpressScraper:
                     print("   [+] Found 'View More' button, scrolling to it...")
                 # Scroll the button into view
                 self.driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", view_more_btn[0])
-                time.sleep(1)
+                random_wait(getattr(config, 'WAIT_SCROLL', (0.3, 0.8)))
                 
                 # Wait for button to be clickable
                 clickable_btn = self.wait.until(
@@ -374,7 +591,7 @@ class AliExpressScraper:
                 if self.detailed_mode or self.debug_mode:
                     print("   [+] Clicking 'View More' button...")
                 self.driver.execute_script("arguments[0].click();", clickable_btn)
-                time.sleep(3)  # Wait longer for content to load
+                random_wait(getattr(config, 'WAIT_PAGE_LOAD', (1.0, 2.0)))  # Wait for content to load
                 
                 # Wait for SEO description to appear
                 try:
@@ -395,7 +612,7 @@ class AliExpressScraper:
 
         # Scroll further down to ensure images lazy load
         self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight / 1.5);")
-        time.sleep(2)
+        random_wait(getattr(config, 'WAIT_PAGE_LOAD', (1.0, 2.0)))
         
         # Scroll to description container to trigger lazy loading of images
         try:
@@ -403,7 +620,7 @@ class AliExpressScraper:
             if desc_container:
                 # Scroll to description area
                 self.driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'start'});", desc_container[0])
-                time.sleep(2)  # Wait for images to load
+                random_wait(getattr(config, 'WAIT_ELEMENT_LOAD', (0.5, 1.0)))  # Wait for images to load
         except:
             pass
         
@@ -646,7 +863,7 @@ class AliExpressScraper:
                         
                         # Scroll to trigger lazy loading
                         self.driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'start'});", search_container)
-                        time.sleep(2)
+                        random_wait(getattr(config, 'WAIT_ELEMENT_LOAD', (0.5, 1.0)))
                         
                         # Extract Images from Rich Text (Regular DOM)
                         imgs = search_container.find_elements(By.TAG_NAME, "img")
@@ -656,7 +873,7 @@ class AliExpressScraper:
                         for idx, img in enumerate(imgs):
                             try:
                                 self.driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", img)
-                                time.sleep(0.3)
+                                random_wait(getattr(config, 'WAIT_BETWEEN_ACTIONS', (0.2, 0.5)))
                                 
                                 src = img.get_attribute("src")
                                 if not src or src.strip() == "":
@@ -753,14 +970,173 @@ class AliExpressScraper:
                 print(f"   Desc Images Found: {len(data.get('description_images', []))}")
                 print(f"   Sellpoints Found: {len(data.get('sellpoints', []))}")
 
-            # --- SAVE ---
-            if self.table:
-                self.table.put_item(Item=data)
+            # --- SEARCH AMAZON FOR COMPETITOR PRICES ---
+            amazon_prices = {}
+            enable_amazon_search = getattr(config, 'ENABLE_AMAZON_PRICE_SEARCH', True)
+            max_amazon_results = getattr(config, 'AMAZON_PRICE_SEARCH_MAX_RESULTS', 10)
+            
+            if enable_amazon_search:
+                try:
+                    product_title = data.get('title', '')
+                    if product_title:
+                        if not self.silent_mode:
+                            print(f"   🔍 Searching Amazon for: {product_title[:50]}...")
+                        amazon_prices = search_amazon_prices_with_driver(self.driver, product_title, max_results=max_amazon_results)
+                        if amazon_prices and not self.silent_mode:
+                            print(f"   ✅ Found {len(amazon_prices)} Amazon results")
+                            for title, price in list(amazon_prices.items())[:3]:
+                                print(f"      - {price}: {title[:40]}...")
+                except Exception as e:
+                    if not self.silent_mode:
+                        print(f"   [!] Amazon price search error: {e}")
+            data["amazon_competitor_prices"] = amazon_prices
+
+            # --- CALL API GATEWAY FOR SUGGESTED CONTENT ---
+            try:
+                input_text = f"{data.get('title','')}\n" + "\n".join(data.get('sellpoints', [])) + "\n" + data.get('description_text', '')
+                
+                # Build payload with pricing information
+                payload = {
+                    "input_text": input_text,
+                    "aliexpress_price": data.get('current_price', ''),
+                    "amazon_competitor_prices": amazon_prices
+                }
+                
+                # --- DEBUG: Print pricing info being sent to API ---
+                if self.detailed_mode or self.debug_mode:
+                    print("\n" + "=" * 100)
+                    print("📊 PRICING DATA FOR API GATEWAY:")
+                    print("=" * 100)
+                    print(f"📦 AliExpress Price: {data.get('current_price', 'N/A')}")
+                    print(f"\n🛒 Amazon Competitor Prices ({len(amazon_prices)} results):")
+                    print("-" * 100)
+                    if amazon_prices:
+                        for idx, (title, price) in enumerate(amazon_prices.items(), 1):
+                            print(f"{idx:2}. [{price:>12}] {title}")
+                    else:
+                        print("   (No Amazon results found)")
+                    print("-" * 100)
+                    print("\n📤 Full payload JSON:")
+                    print(json.dumps({
+                        "aliexpress_price": data.get('current_price', ''),
+                        "amazon_competitor_prices": amazon_prices
+                    }, indent=2, ensure_ascii=False))
+                    print("=" * 100 + "\n")
+                
+                headers = {"Content-Type": "application/json"}
+                try:
+                    extra = getattr(config, "API_GATEWAY_HEADERS", {})
+                    if isinstance(extra, dict):
+                        headers.update(extra)
+                except Exception:
+                    pass
+                api_url = getattr(config, "API_GATEWAY_URL", "")
+                suggested = {}
+                if api_url:
+                    resp = requests.post(api_url, json=payload, headers=headers, timeout=30)
+                    if resp.status_code == 200:
+                        raw = resp.json() or {}
+                        # API returns result_structured with title, bullet_point, description
+                        suggested = raw.get("result_structured", raw)
+                        if not self.silent_mode:
+                            print("✅ Suggested content received.")
+                data["suggested_title"] = suggested.get("title", "")
+                data["suggested_seller_point"] = suggested.get("bullet_point", "")
+                data["suggested_description"] = suggested.get("description", "")
+                
+                # Calculate price fields locally (API may return N/A)
+                price_stats = calculate_amazon_price_stats(amazon_prices, data.get('current_price', ''))
+                data["amazon_avg_price"] = price_stats["amazon_avg_price"]
+                data["amazon_min_price"] = price_stats["amazon_min_price"]
+                data["amazon_min_price_product"] = price_stats["amazon_min_price_product"]
+                data["ali_express_rec_price"] = price_stats["ali_express_rec_price"]
+                
                 if not self.silent_mode:
-                    print("💾 Saved to DynamoDB.")
-            else:
+                    print(f"   💰 Amazon Avg: {data['amazon_avg_price']}, Min: {data['amazon_min_price']}")
+            except Exception as e:
                 if not self.silent_mode:
-                    print("💾 (Mock) Saved to DB.")
+                    print(f"⚠️ Suggested content API error: {e}")
+                data["suggested_title"] = ""
+                data["suggested_seller_point"] = ""
+                data["suggested_description"] = ""
+                # Still calculate price stats even if API fails
+                price_stats = calculate_amazon_price_stats(amazon_prices, data.get('current_price', ''))
+                data["amazon_avg_price"] = price_stats["amazon_avg_price"]
+                data["amazon_min_price"] = price_stats["amazon_min_price"]
+                data["amazon_min_price_product"] = price_stats["amazon_min_price_product"]
+                data["ali_express_rec_price"] = price_stats["ali_express_rec_price"]
+
+            # --- DOWNLOAD IMAGES LOCALLY ---
+            try:
+                product_img_dir = os.path.join(IMAGE_CACHE_DIR, p_id)
+                gallery_dir = os.path.join(product_img_dir, "gallery")
+                desc_dir = os.path.join(product_img_dir, "description")
+                sku_dir = os.path.join(product_img_dir, "sku")
+                
+                # Preserve remote URLs
+                data['gallery_images_remote'] = data.get('gallery_images', [])[:]
+                data['description_images_remote'] = data.get('description_images', [])[:]
+                skus_remote_list = []
+                for sku in data.get('skus', []):
+                    skus_remote_list.append({
+                        "name": sku.get("name", ""),
+                        "image_url_remote": sku.get("image_url", ""),
+                        "image_url": sku.get("image_url", ""),
+                    })
+                # We'll merge remote into skus later
+                
+                # Gallery images
+                gallery_local = []
+                for idx, g_url in enumerate(data.get('gallery_images', [])):
+                    local_path = download_image(g_url, gallery_dir, f"gallery_{idx}.jpg")
+                    if local_path:
+                        gallery_local.append(local_path)
+                data['gallery_images'] = gallery_local
+                
+                # Description images
+                desc_local = []
+                for idx, d_url in enumerate(data.get('description_images', [])):
+                    local_path = download_image(d_url, desc_dir, f"desc_{idx}.jpg")
+                    if local_path:
+                        desc_local.append(local_path)
+                data['description_images'] = desc_local
+                
+                # SKU images
+                skus_local = []
+                for idx, sku in enumerate(data.get('skus', [])):
+                    img_url = skus_remote_list[idx].get("image_url", "")
+                    local_path = download_image(img_url, sku_dir, f"sku_{idx}.jpg")
+                    merged = {
+                        "name": sku.get("name", ""),
+                        "image_url": local_path if local_path else skus_remote_list[idx].get("image_url", ""),
+                        "image_url_remote": skus_remote_list[idx].get("image_url_remote", ""),
+                    }
+                    skus_local.append(merged)
+                data['skus'] = skus_local
+            except Exception as e:
+                if not self.silent_mode:
+                    print(f"⚠️ Image download error: {e}")
+            
+            # --- PROCESS IMAGES (Resize, Remove BG, Upload to S3) ---
+            if IMAGE_PROCESSING_AVAILABLE:
+                try:
+                    if not self.silent_mode:
+                        print("🖼️ Processing images...")
+                    data = process_product_images(data, silent_mode=self.silent_mode)
+                except Exception as e:
+                    if not self.silent_mode:
+                        print(f"⚠️ Image processing error: {e}")
+            
+            # --- SAVE LOCALLY (JSON per product) ---
+            try:
+                prod_path = os.path.join(PRODUCT_CACHE_DIR, f"{p_id}.json")
+                with open(prod_path, "w", encoding="utf-8") as f:
+                    json.dump(data, f, ensure_ascii=False, indent=2)
+                if not self.silent_mode:
+                    print(f"💾 Saved locally: {prod_path}")
+            except Exception as e:
+                if not self.silent_mode:
+                    print(f"❌ Failed to save local JSON: {e}")
 
         except Exception as e:
             if not self.silent_mode:
@@ -776,7 +1152,11 @@ class AliExpressScraper:
         print("ACTION REQUIRED:")
         print("1. Navigate to the AliExpress Search Results page.")
         print("2. Solve any CAPTCHA/Login prompts.")
-        input("3. Press ENTER in this console when the results page is ready to be scraped...")
+        if getattr(self, "resume_event", None):
+            print("3. Click Resume in the UI when the results page is ready to be scraped...")
+            self.resume_event.wait()
+        else:
+            input("3. Press ENTER in this console when the results page is ready to be scraped...")
         print("#####################################################\n")
 
         if not self.silent_mode:
@@ -784,7 +1164,10 @@ class AliExpressScraper:
 
         # Scroll to ensure elements load
         self.driver.execute_script("window.scrollBy(0, 800);")
-        time.sleep(2)
+        random_wait(getattr(config, 'WAIT_PAGE_LOAD', (1.0, 2.0)))
+        
+        # Check for CAPTCHA after scroll
+        self._check_and_handle_captcha()
 
         links_found = []
         try:
@@ -808,13 +1191,17 @@ class AliExpressScraper:
             for link in targets:
                 print(f"   -> {link}")
 
-        for link in targets:
+        for idx, link in enumerate(targets):
+            if not self.silent_mode:
+                print(f"\n📦 Processing product {idx + 1}/{len(targets)}...")
+            
             self.scrape_product_details(link)
 
             # IMPROVEMENT: Add randomized delay between pages
-            delay = random.uniform(2, 5)
+            wait_range = getattr(config, 'WAIT_BETWEEN_PRODUCTS', (1.5, 3.0))
+            delay = random.uniform(wait_range[0], wait_range[1])
             if self.detailed_mode or self.debug_mode:
-                print(f"   (Pausing for {delay:.2f} seconds to mimic human behavior...)")
+                print(f"   (Paused for {delay:.2f}s)")
             time.sleep(delay)
 
 if __name__ == "__main__":
