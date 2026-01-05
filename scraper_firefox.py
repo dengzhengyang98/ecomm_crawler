@@ -11,6 +11,7 @@ import urllib.parse
 import platform
 import subprocess
 import shutil
+import itertools
 from selenium import webdriver
 from selenium.webdriver.firefox.service import Service
 from selenium.webdriver.firefox.options import Options
@@ -647,6 +648,357 @@ class AliExpressScraper:
         
         return False
 
+    def _extract_sku_combinations(self):
+        """
+        Extract all SKU combinations by finding all SKU rows (properties) and their options,
+        then generate all possible combinations.
+        
+        Returns:
+            List of SKU combination dicts with 'name', 'image_url', 'options', and 'elements'
+        """
+        sku_combinations = []
+        
+        try:
+            # Find all SKU rows (properties) - each row represents a different property
+            sku_rows = self.driver.find_elements(By.CSS_SELECTOR, "div[data-sku-row]")
+            
+            if not sku_rows:
+                if self.debug_mode:
+                    print("   ⚠️  No SKU rows found")
+                return []
+            
+            if self.detailed_mode or self.debug_mode:
+                print(f"   🔍 Found {len(sku_rows)} SKU property row(s)")
+            
+            # Extract property information and options for each row
+            sku_properties = []
+            for row_idx, row in enumerate(sku_rows):
+                try:
+                    # Get property name (title) - e.g., "Color Temperature:", "Color:"
+                    # The title is in a parent container, not directly in the row
+                    property_name = ""
+                    try:
+                        # Find the property container (parent of the row)
+                        property_container = row.find_element(By.XPATH, "./ancestor::div[contains(@class, 'sku-item--property')]")
+                        # Get the title element
+                        title_elem = property_container.find_element(By.CSS_SELECTOR, ".sku-item--title--Z0HLO87, .sku-item--title")
+                        # Get the first span (property name), not nested spans (selected value)
+                        title_spans = title_elem.find_elements(By.TAG_NAME, "span")
+                        if title_spans:
+                            # First span contains the property name (e.g., "Color Temperature:&nbsp;2PS")
+                            # We need to extract just "Color Temperature" without the nested span content
+                            first_span = title_spans[0]
+                            # Get text content, but exclude nested span text
+                            property_name = self.driver.execute_script("""
+                                var span = arguments[0];
+                                var text = span.childNodes[0] ? span.childNodes[0].textContent : span.textContent;
+                                return text ? text.trim() : '';
+                            """, first_span)
+                            if not property_name:
+                                # Fallback: get all text and remove nested content
+                                property_name = first_span.text.strip()
+                            # Clean up: remove "&nbsp;", ":", and any trailing content
+                            property_name = property_name.replace("&nbsp;", " ").replace(":", "").strip()
+                            # Remove any trailing numbers or selected values
+                            property_name = re.sub(r'\s+\d+.*$', '', property_name).strip()
+                    except:
+                        try:
+                            # Alternative: try to find title in row's parent
+                            parent = row.find_element(By.XPATH, "./ancestor::div[contains(@class, 'sku-item--property')]")
+                            title_elem = parent.find_element(By.CSS_SELECTOR, ".sku-item--title")
+                            # Get text but exclude nested spans
+                            property_name = title_elem.text.strip()
+                            # Remove nested content (selected values)
+                            property_name = re.sub(r':\s*\S+.*$', '', property_name).replace(":", "").strip()
+                        except:
+                            property_name = f"Property {row_idx + 1}"
+                    
+                    # Get all options in this row
+                    # Options might be in the row itself or in a nested container
+                    options = []
+                    option_elements = row.find_elements(By.CSS_SELECTOR, "div[data-sku-col]")
+                    
+                    # If no elements found in row, try finding in parent container
+                    if not option_elements:
+                        try:
+                            property_container = row.find_element(By.XPATH, "./ancestor::div[contains(@class, 'sku-item--property')]")
+                            option_elements = property_container.find_elements(By.CSS_SELECTOR, "div[data-sku-col]")
+                        except:
+                            pass
+                    
+                    for opt_elem in option_elements:
+                        try:
+                            # Get option name
+                            opt_name = opt_elem.get_attribute("title")
+                            if not opt_name or not opt_name.strip():
+                                # Try image alt text
+                                try:
+                                    img = opt_elem.find_element(By.TAG_NAME, "img")
+                                    opt_name = img.get_attribute("alt")
+                                except:
+                                    # Try span text
+                                    try:
+                                        span = opt_elem.find_element(By.TAG_NAME, "span")
+                                        opt_name = span.text.strip()
+                                    except:
+                                        opt_name = opt_elem.text.strip()
+                            
+                            # Get image URL if available
+                            opt_image_url = ""
+                            try:
+                                img = opt_elem.find_element(By.TAG_NAME, "img")
+                                opt_image_url = clean_image_url(img.get_attribute("src"))
+                            except:
+                                pass
+                            
+                            if opt_name and opt_name.strip():
+                                options.append({
+                                    "name": opt_name.strip(),
+                                    "image_url": opt_image_url,
+                                    "element": opt_elem
+                                })
+                        except Exception as e:
+                            if self.debug_mode:
+                                print(f"      [!] Error extracting option: {e}")
+                            continue
+                    
+                    if options:
+                        sku_properties.append({
+                            "property_name": property_name,
+                            "options": options
+                        })
+                        if self.detailed_mode or self.debug_mode:
+                            print(f"      [{row_idx + 1}] {property_name}: {len(options)} option(s)")
+                            for opt in options[:3]:  # Show first 3
+                                print(f"         - {opt['name']}")
+                            if len(options) > 3:
+                                print(f"         ... and {len(options) - 3} more")
+                
+                except Exception as e:
+                    if self.debug_mode:
+                        print(f"      [!] Error processing SKU row {row_idx + 1}: {e}")
+                    continue
+            
+            # Generate all combinations using itertools.product
+            if not sku_properties:
+                if self.debug_mode:
+                    print("   ⚠️  No SKU properties found")
+                return []
+            
+            # Generate all combinations
+            all_option_lists = [prop["options"] for prop in sku_properties]
+            all_combinations = list(itertools.product(*all_option_lists))
+            
+            if self.detailed_mode or self.debug_mode:
+                print(f"   📦 Generated {len(all_combinations)} SKU combination(s)")
+            
+            # Create SKU combination data
+            for combo_idx, combination in enumerate(all_combinations):
+                # Build combination name (e.g., "2PS, For Original Xenon")
+                combo_parts = []
+                combo_images = []
+                combo_elements = []
+                
+                for prop_idx, option in enumerate(combination):
+                    combo_parts.append(option["name"])
+                    if option["image_url"]:
+                        combo_images.append(option["image_url"])
+                    combo_elements.append(option["element"])
+                
+                combo_name = ", ".join(combo_parts)
+                # Use first available image, or empty string
+                combo_image_url = combo_images[0] if combo_images else ""
+                
+                sku_combinations.append({
+                    "name": combo_name,
+                    "image_url": combo_image_url,
+                    "options": combo_parts,  # List of option names
+                    "elements": combo_elements  # List of elements to click
+                })
+            
+        except Exception as e:
+            if not self.silent_mode:
+                print(f"   [!] Error extracting SKU combinations: {e}")
+            if self.debug_mode:
+                import traceback
+                traceback.print_exc()
+        
+        return sku_combinations
+
+    def _extract_sku_prices(self, sku_combinations):
+        """
+        Iterate through all SKU combinations, click each combination, and extract prices.
+        
+        Args:
+            sku_combinations: List of SKU combination dicts with 'name', 'image_url', 'options', and 'elements'
+            
+        Returns:
+            List of SKU dicts with added 'current_price' and 'history_price' fields
+        """
+        if not sku_combinations:
+            return []
+        
+        sku_data_with_prices = []
+        
+        try:
+            # Get the default/initial price first
+            default_current_price = "N/A"
+            default_original_price = "N/A"
+            try:
+                current_price_el = self.driver.find_element(By.CSS_SELECTOR, config.PRODUCT_PRICE_CURRENT_SELECTOR)
+                default_current_price = current_price_el.text.replace("US $", "").strip()
+            except:
+                pass
+            
+            try:
+                orig_price_el = self.driver.find_element(By.CSS_SELECTOR, config.PRODUCT_PRICE_ORIGINAL_SELECTOR)
+                default_original_price = orig_price_el.text.replace("US $", "").strip()
+            except:
+                pass
+            
+            if self.detailed_mode or self.debug_mode:
+                print(f"   📊 Extracting prices for {len(sku_combinations)} SKU combination(s)...")
+                print(f"   💰 Default price: {default_current_price}")
+            
+            # Scroll to SKU section to ensure visibility
+            try:
+                first_row = self.driver.find_elements(By.CSS_SELECTOR, "div[data-sku-row]")
+                if first_row:
+                    self.driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", first_row[0])
+                    random_wait(getattr(config, 'WAIT_ELEMENT_LOAD', (0.5, 1.0)))
+            except:
+                pass
+            
+            # Iterate through each SKU combination and get its price
+            for idx, combo in enumerate(sku_combinations):
+                combo_name = combo.get("name", "")
+                combo_image_url = combo.get("image_url", "")
+                combo_elements = combo.get("elements", [])
+                
+                # Initialize with default price
+                current_price = default_current_price
+                original_price = default_original_price
+                
+                if combo_elements:
+                    try:
+                        # Click all elements in the combination to select it
+                        # Scroll to first element
+                        self.driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", combo_elements[0])
+                        random_wait(getattr(config, 'WAIT_BETWEEN_ACTIONS', (0.2, 0.5)))
+                        
+                        # Click each element in the combination
+                        for elem_idx, element in enumerate(combo_elements):
+                            try:
+                                # Check if already selected
+                                is_selected = False
+                                try:
+                                    element_class = element.get_attribute("class") or ""
+                                    if "selected" in element_class.lower() or "active" in element_class.lower():
+                                        is_selected = True
+                                except:
+                                    pass
+                                
+                                if not is_selected:
+                                    # Scroll element into view
+                                    self.driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", element)
+                                    random_wait(getattr(config, 'WAIT_BETWEEN_ACTIONS', (0.1, 0.3)))
+                                    
+                                    # Click the element
+                                    self.driver.execute_script("arguments[0].click();", element)
+                                    if self.detailed_mode or self.debug_mode:
+                                        opt_name = combo.get("options", [])[elem_idx] if elem_idx < len(combo.get("options", [])) else "option"
+                                        print(f"         Clicked: {opt_name}")
+                                    
+                                    # Small delay between clicks
+                                    random_wait(getattr(config, 'WAIT_BETWEEN_ACTIONS', (0.2, 0.4)))
+                            except Exception as click_e:
+                                if self.debug_mode:
+                                    print(f"         [!] Error clicking element {elem_idx + 1}: {click_e}")
+                        
+                        # Wait for price to update after selecting the combination
+                        random_wait(getattr(config, 'WAIT_ELEMENT_LOAD', (0.5, 1.0)))
+                        
+                        # Wait for price to change (up to 3 seconds)
+                        max_wait_time = 3.0
+                        wait_interval = 0.2
+                        waited = 0.0
+                        previous_price = default_current_price
+                        
+                        while waited < max_wait_time:
+                            try:
+                                new_price_el = self.driver.find_element(By.CSS_SELECTOR, config.PRODUCT_PRICE_CURRENT_SELECTOR)
+                                new_price_text = new_price_el.text.replace("US $", "").strip()
+                                if new_price_text != previous_price:
+                                    current_price = new_price_text
+                                    previous_price = new_price_text
+                                    time.sleep(0.3)
+                                    break
+                            except:
+                                pass
+                            time.sleep(wait_interval)
+                            waited += wait_interval
+                        
+                        # Extract current price (final check)
+                        try:
+                            current_price_el = self.driver.find_element(By.CSS_SELECTOR, config.PRODUCT_PRICE_CURRENT_SELECTOR)
+                            current_price = current_price_el.text.replace("US $", "").strip()
+                        except:
+                            pass
+                        
+                        # Extract history/original price
+                        try:
+                            orig_price_el = self.driver.find_element(By.CSS_SELECTOR, config.PRODUCT_PRICE_ORIGINAL_SELECTOR)
+                            original_price = orig_price_el.text.replace("US $", "").strip()
+                        except:
+                            pass
+                        
+                        if self.detailed_mode or self.debug_mode:
+                            if current_price != default_current_price:
+                                print(f"      ✅ [{idx + 1}/{len(sku_combinations)}] {combo_name}: {current_price} (different from default {default_current_price})")
+                            else:
+                                print(f"      ✓ [{idx + 1}/{len(sku_combinations)}] {combo_name}: {current_price}")
+                    
+                    except Exception as e:
+                        if self.debug_mode:
+                            print(f"      [!] Error processing SKU combination {combo_name}: {e}")
+                            import traceback
+                            traceback.print_exc()
+                else:
+                    if self.debug_mode:
+                        print(f"      [-] No elements found for combination: {combo_name}")
+                
+                # Add SKU with price information
+                sku_with_price = {
+                    "name": combo_name,
+                    "image_url": combo_image_url,
+                    "current_price": current_price,
+                    "history_price": original_price
+                }
+                sku_data_with_prices.append(sku_with_price)
+                
+                # Small delay between combinations
+                if idx < len(sku_combinations) - 1:
+                    random_wait(getattr(config, 'WAIT_BETWEEN_ACTIONS', (0.3, 0.6)))
+            
+        except Exception as e:
+            if not self.silent_mode:
+                print(f"   [!] Error extracting SKU prices: {e}")
+            if self.debug_mode:
+                import traceback
+                traceback.print_exc()
+            
+            # Fallback: return SKUs with default prices
+            for combo in sku_combinations:
+                sku_with_price = {
+                    "name": combo.get("name", ""),
+                    "image_url": combo.get("image_url", ""),
+                    "current_price": "N/A",
+                    "history_price": "N/A"
+                }
+                sku_data_with_prices.append(sku_with_price)
+        
+        return sku_data_with_prices
+
     def scrape_product_details(self, url):
         # 1. Generate Unique ID (UUID) instead of Hash
         p_id = generate_id()
@@ -663,6 +1015,115 @@ class AliExpressScraper:
 
         # CAPTCHA Check - check immediately after page load
         self._check_and_handle_captcha()
+
+        # IMPORTANT: Extract SKUs and prices FIRST, before any scrolling
+        # Initialize data dict early for SKU extraction
+        data = {
+            'product_id': p_id,
+            'title': None,  # Will be set later
+            'url': url,
+        }
+        
+        # Extract SKUs and prices at the very beginning
+        sku_data = []
+        try:
+            if self.detailed_mode or self.debug_mode:
+                print("   📦 Extracting SKUs and prices (at beginning, before scrolling)...")
+            
+            # Wait for page to render SKU elements
+            random_wait(getattr(config, 'WAIT_ELEMENT_LOAD', (0.5, 1.0)))
+            
+            # Try to find SKU container/row first to scroll into view
+            try:
+                sku_rows = self.driver.find_elements(By.CSS_SELECTOR, "div[data-sku-row]")
+                if not sku_rows:
+                    sku_rows = self.driver.find_elements(By.CSS_SELECTOR, "div[class*='sku-item--skus']")
+                
+                if sku_rows:
+                    self.driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", sku_rows[0])
+                    random_wait(getattr(config, 'WAIT_ELEMENT_LOAD', (0.5, 1.0)))
+                    if self.detailed_mode or self.debug_mode:
+                        print(f"   [+] Found {len(sku_rows)} SKU row(s), scrolled into view")
+            except Exception as e:
+                if self.debug_mode:
+                    print(f"   [!] Could not find SKU rows container: {e}")
+            
+            # Wait for SKU elements to be present
+            try:
+                self.wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "div[data-sku-col]")))
+            except:
+                random_wait(getattr(config, 'WAIT_ELEMENT_LOAD', (0.5, 1.0)))
+            
+            # Extract SKU combinations (handles multiple properties/rows)
+            sku_combinations = self._extract_sku_combinations()
+            
+            if sku_combinations:
+                if self.detailed_mode or self.debug_mode:
+                    print(f"   🔍 Found {len(sku_combinations)} SKU combination(s), extracting prices...")
+                # Extract prices for each combination
+                sku_data = self._extract_sku_prices(sku_combinations)
+            else:
+                # Fallback: try old method (single property)
+                if self.detailed_mode or self.debug_mode:
+                    print("   ⚠️  No SKU combinations found, trying fallback method...")
+                
+                sku_containers = self.driver.find_elements(By.CSS_SELECTOR, "div[data-sku-col]")
+                if sku_containers:
+                    for idx, container in enumerate(sku_containers):
+                        try:
+                            sku_name = container.get_attribute("title")
+                            sku_image_url = ""
+                            
+                            try:
+                                img_el = container.find_element(By.TAG_NAME, "img")
+                                if img_el:
+                                    if not sku_name or not sku_name.strip():
+                                        sku_name = img_el.get_attribute("alt")
+                                    sku_src = clean_image_url(img_el.get_attribute("src"))
+                                    if sku_src:
+                                        sku_image_url = sku_src
+                            except:
+                                if not sku_name or not sku_name.strip():
+                                    try:
+                                        span = container.find_element(By.TAG_NAME, "span")
+                                        sku_name = span.text.strip() if span else ""
+                                    except:
+                                        sku_name = container.text.strip()
+                            
+                            if sku_name and sku_name.strip():
+                                sku_data.append({
+                                    "name": sku_name.strip(),
+                                    "image_url": sku_image_url,
+                                    "current_price": "N/A",
+                                    "history_price": "N/A"
+                                })
+                        except:
+                            continue
+                else:
+                    # Last fallback: try image-based SKUs using old selector
+                    try:
+                        sku_imgs = self.driver.find_elements(By.CSS_SELECTOR, config.PRODUCT_SKU_SELECTOR)
+                        for img_el in sku_imgs:
+                            sku_name = img_el.get_attribute("alt")
+                            sku_src = clean_image_url(img_el.get_attribute("src"))
+                            if sku_name and sku_src:
+                                sku_data.append({
+                                    "name": sku_name,
+                                    "image_url": sku_src,
+                                    "current_price": "N/A",
+                                    "history_price": "N/A"
+                                })
+                    except:
+                        pass
+            
+            data['skus'] = sku_data
+        except Exception as e:
+            if not self.silent_mode:
+                print(f"   [!] Error extracting SKUs: {e}")
+            if self.debug_mode:
+                import traceback
+                traceback.print_exc()
+            data['skus'] = []
 
         # 2. SCROLL & EXPAND DESCRIPTION
         self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight / 3);")
@@ -728,13 +1189,6 @@ class AliExpressScraper:
             if response == 'y':
                 self.debug_interactive_selector()
 
-        # Initialize data dict with ordered keys (product_id, title, url first)
-        data = {
-            'product_id': p_id,
-            'title': None,  # Will be set later
-            'url': url,
-        }
-
         try:
             # --- A. TITLE ---
             try:
@@ -771,17 +1225,20 @@ class AliExpressScraper:
                 data['gallery_images'] = []
 
             # --- D. SKUS ---
-            sku_data = []
-            try:
-                sku_imgs = self.driver.find_elements(By.CSS_SELECTOR, config.PRODUCT_SKU_SELECTOR)
-                for img_el in sku_imgs:
-                    sku_name = img_el.get_attribute("alt")
-                    sku_src = clean_image_url(img_el.get_attribute("src"))
-                    if sku_name and sku_src:
-                        sku_data.append({"name": sku_name, "image_url": sku_src})
-                data['skus'] = sku_data
-            except:
-                data['skus'] = []
+            # SKUs were already extracted at the beginning, so data['skus'] should already be set
+            # If not set (fallback case), try to extract again here
+            if 'skus' not in data or not data.get('skus'):
+                sku_data = []
+                try:
+                    sku_imgs = self.driver.find_elements(By.CSS_SELECTOR, config.PRODUCT_SKU_SELECTOR)
+                    for img_el in sku_imgs:
+                        sku_name = img_el.get_attribute("alt")
+                        sku_src = clean_image_url(img_el.get_attribute("src"))
+                        if sku_name and sku_src:
+                            sku_data.append({"name": sku_name, "image_url": sku_src})
+                    data['skus'] = sku_data
+                except:
+                    data['skus'] = []
 
             # --- E. DESCRIPTION (Text & Images) ---
             desc_text_parts = []
@@ -1180,11 +1637,19 @@ class AliExpressScraper:
                 data['description_images_remote'] = data.get('description_images', [])[:]
                 skus_remote_list = []
                 for sku in data.get('skus', []):
-                    skus_remote_list.append({
+                    sku_remote = {
                         "name": sku.get("name", ""),
                         "image_url_remote": sku.get("image_url", ""),
                         "image_url": sku.get("image_url", ""),
-                    })
+                    }
+                    # Preserve price fields
+                    if "current_price" in sku:
+                        sku_remote["current_price"] = sku.get("current_price", "")
+                    if "history_price" in sku:
+                        sku_remote["history_price"] = sku.get("history_price", "")
+                    elif "original_price" in sku:  # Handle old field name
+                        sku_remote["history_price"] = sku.get("original_price", "")
+                    skus_remote_list.append(sku_remote)
                 # We'll merge remote into skus later
                 
                 # Gallery images
@@ -1213,6 +1678,13 @@ class AliExpressScraper:
                         "image_url": local_path if local_path else skus_remote_list[idx].get("image_url", ""),
                         "image_url_remote": skus_remote_list[idx].get("image_url_remote", ""),
                     }
+                    # Preserve price fields if they exist
+                    if "current_price" in sku:
+                        merged["current_price"] = sku.get("current_price", "")
+                    if "history_price" in sku:
+                        merged["history_price"] = sku.get("history_price", "")
+                    elif "original_price" in sku:  # Handle old field name for backward compatibility
+                        merged["history_price"] = sku.get("original_price", "")
                     skus_local.append(merged)
                 data['skus'] = skus_local
             except Exception as e:

@@ -1,18 +1,22 @@
 # config.py
 
+# Import obfuscation helper
+from config_obfuscation import _decode_string
+
 # AWS Configuration
 AWS_REGION = "us-west-2"
 DYNAMODB_TABLE = "AliExpressProducts"
 
 # AWS Cognito Configuration
-COGNITO_USER_POOL_ID = "us-west-2_sBUl6DYed"
-COGNITO_CLIENT_ID = "17f5ud14282oq1hitnhvno647q"
+# Obfuscated values to protect against reverse engineering
+COGNITO_USER_POOL_ID = _decode_string("dXMtd2VzdC0yX3NCVWw2RFllZA==")
+COGNITO_CLIENT_ID = _decode_string("MTdmNXVkMTQyODJvcTFoaXRuaHZubzY0N3E=")
 COGNITO_REGION = "us-west-2"
 
 # AWS Cognito Identity Pool Configuration (for DynamoDB access)
 # Get this from AWS Console: Cognito > Federated Identities > Your Identity Pool
 # Format: "us-west-2:XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX"
-COGNITO_IDENTITY_POOL_ID = "us-west-2:58d92f54-da0e-4ecd-bc5e-ec0c3c64fb66"  # TODO: Fill in your Identity Pool ID
+COGNITO_IDENTITY_POOL_ID = _decode_string("dXMtd2VzdC0yOjU4ZDkyZjU0LWRhMGUtNGVjZC1iYzVlLWVjMGMzYzY0ZmI2Ng==")
 
 # Keyring service name for storing tokens securely
 KEYRING_SERVICE_NAME = "EcommCrawler"
@@ -31,9 +35,9 @@ MODE = "detailed"
 
 # --- API Gateway (suggested content) ---
 # Fill these values if auth is needed.
-API_GATEWAY_URL = "https://u5ohkglvw7.execute-api.us-west-2.amazonaws.com/invoke"
+API_GATEWAY_URL = _decode_string("aHR0cHM6Ly91NW9oa2dsdnc3LmV4ZWN1dGUtYXBpLnVzLXdlc3QtMi5hbWF6b25hd3MuY29tL2ludm9rZQ==")
 API_GATEWAY_HEADERS = {
-    # "x-api-key": "",
+    # "x-api-key": _decode_string("your-obfuscated-api-key-here"),
     # "Authorization": "Bearer ",
 }
 

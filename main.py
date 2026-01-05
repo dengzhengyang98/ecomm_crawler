@@ -150,8 +150,52 @@ class Application:
         # Start session validation timer
         self._start_session_validation_timer()
         
+        # Connect to aboutToQuit to ensure cleanup
+        self.app.aboutToQuit.connect(self._cleanup_on_exit)
+        
         # Run event loop
         return self.app.exec()
+    
+    def _cleanup_on_exit(self):
+        """Clean up resources when application is about to quit."""
+        print("DEBUG: Application about to quit, cleaning up threads...")
+        if self.main_window:
+            # Clean up all image loader threads first
+            if hasattr(self.main_window, '_cleanup_all_image_loader_threads'):
+                try:
+                    self.main_window._cleanup_all_image_loader_threads()
+                except Exception as e:
+                    print(f"DEBUG: Error cleaning up image loader threads: {e}")
+            
+            # Ensure scraper thread is cleaned up
+            if hasattr(self.main_window, 'scraper_thread') and self.main_window.scraper_thread:
+                thread = self.main_window.scraper_thread
+                if thread.isRunning():
+                    print(f"DEBUG: Scraper thread is still running, cleaning up...")
+                    try:
+                        thread.stop()
+                        if not thread.wait(2000):  # Wait 2 seconds
+                            print("DEBUG: Scraper thread didn't stop, terminating...")
+                            thread.terminate()
+                            thread.wait(1000)
+                    except Exception as e:
+                        print(f"DEBUG: Error cleaning up scraper thread: {e}")
+        
+        # Process events to allow cleanup to complete
+        try:
+            from PySide6.QtCore import QCoreApplication
+            app = QCoreApplication.instance()
+            if app:
+                print("DEBUG: Processing events to allow thread cleanup...")
+                app.processEvents()
+                # Give threads a moment to finish
+                import time
+                time.sleep(0.1)
+                app.processEvents()
+        except Exception as e:
+            print(f"DEBUG: Error processing events: {e}")
+        
+        print("DEBUG: Thread cleanup complete.")
 
 
 def main():
