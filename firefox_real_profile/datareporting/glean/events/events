@@ -1,0 +1,12 @@
+{"timestamp":250115542,"category":"session_restore","name":"backup_can_be_loaded_session_file","extra":{"glean_timestamp":"1767080923544","can_load":"true","path_key":"clean","loadfail_reason":"N/A"}}
+{"timestamp":250115542,"category":"session_restore","name":"backup_can_be_loaded_session_file","extra":{"glean_timestamp":"1767080923544","loadfail_reason":"N/A","path_key":"clean","can_load":"true"}}
+{"timestamp":250115545,"category":"session_restore","name":"shutdown_success_session_startup","extra":{"glean_timestamp":"1767080923546","shutdown_reason":"N/A","shutdown_ok":"false"}}
+{"timestamp":250116336,"category":"webcompatreporting","name":"reason_dropdown","extra":{"setting":"required","glean_timestamp":"1767080924337"}}
+{"timestamp":250116642,"category":"nimbus_events","name":"startup_database_consistency","extra":{"total_db_count":"0","db_active_count":"0","glean_timestamp":"1767080924643","primary":"jsonfile","store_active_count":"0","trigger":"startup","total_store_count":"0"}}
+{"timestamp":250116691,"category":"jsonfile","name":"load_autofillprofiles","extra":{"value":"error_notfounderror","glean_timestamp":"1767080924692"}}
+{"timestamp":250116712,"category":"containers","name":"container_profile_loaded","extra":{"glean_timestamp":"1767080924714","containers":"4"}}
+{"timestamp":250116771,"category":"nimbus_events","name":"is_ready","extra":{"glean_timestamp":"1767080924772"}}
+{"timestamp":250116793,"category":"jsonfile","name":"load_logins","extra":{"glean_timestamp":"1767080924795","value":"error_notfounderror"}}
+{"timestamp":250116796,"category":"upgrade_dialog","name":"trigger_reason","extra":{"glean_timestamp":"1767080924797","value":"not-major"}}
+{"timestamp":250155899,"category":"media.playback","name":"first_frame_loaded","extra":{"playback_type":"Non-MSE playback","glean_timestamp":"1767080969232","total_waiting_data_time":"0","metadata_loaded_time":"21","video_codec":"video/avc","decoder_name":"apple hardware VT decoder (RDD remote)","is_hardware_decoding":"true","resolution":"AV,240<h<=480","first_frame_loaded_time":"262","is_hdr":"false","buffering_time":"0"}}
+{"timestamp":250177384,"category":"tabgroup","name":"smart_tab","extra":{"glean_timestamp":"1767080985386","enabled":"false"}}

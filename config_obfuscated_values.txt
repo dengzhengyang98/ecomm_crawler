@@ -1,0 +1,7 @@
+# Obfuscated config values - Copy these to config.py
+# Import _decode_string from config_obfuscation first
+
+COGNITO_USER_POOL_ID = _decode_string("dXMtd2VzdC0yX3NCVWw2RFllZA==")
+COGNITO_CLIENT_ID = _decode_string("MTdmNXVkMTQyODJvcTFoaXRuaHZubzY0N3E=")
+COGNITO_IDENTITY_POOL_ID = _decode_string("dXMtd2VzdC0yOjU4ZDkyZjU0LWRhMGUtNGVjZC1iYzVlLWVjMGMzYzY0ZmI2Ng==")
+API_GATEWAY_URL = _decode_string("aHR0cHM6Ly91NW9oa2dsdnc3LmV4ZWN1dGUtYXBpLnVzLXdlc3QtMi5hbWF6b25hd3MuY29tL2ludm9rZQ==")

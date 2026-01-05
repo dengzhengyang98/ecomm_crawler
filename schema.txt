@@ -1,0 +1,217 @@
+{
+  "product_id": {
+    "S": "697de68e-0708-4aca-9bab-c233f51359b6"
+  },
+  "current_price": {
+    "S": "22.10"
+  },
+  "description_images": {
+    "L": []
+  },
+  "description_text": {
+    "S": ""
+  },
+  "gallery_images": {
+    "L": [
+      {
+        "S": "https://ae-pic-a1.aliexpress-media.com/kf/S558371e2a1c84ccea0c5a942e395dc22k.png_220x220.png_.avif"
+      },
+      {
+        "S": "https://ae-pic-a1.aliexpress-media.com/kf/Sc8ca48c37d2847088509a189662ed5bcE.png_220x220.png_.avif"
+      },
+      {
+        "S": "https://ae-pic-a1.aliexpress-media.com/kf/Safedb4b51281405eba6b0e4c3dd2ba745.png_220x220.png_.avif"
+      },
+      {
+        "S": "https://ae-pic-a1.aliexpress-media.com/kf/S538834e450584c03a7d1ce70c172268fJ.png_220x220.png_.avif"
+      },
+      {
+        "S": "https://ae-pic-a1.aliexpress-media.com/kf/S1978b584067c432fa5b97552a22e8fe9l.png_220x220.png_.avif"
+      },
+      {
+        "S": "https://ae-pic-a1.aliexpress-media.com/kf/S62ada83235184ac780e9912164e20919z.png_220x220.png_.avif"
+      },
+      {
+        "S": "https://ae-pic-a1.aliexpress-media.com/kf/Sdd4096542015402586493fa9ff479bc5y.png_220x220.png_.avif"
+      },
+      {
+        "S": "https://ae-pic-a1.aliexpress-media.com/kf/S6f0b022f050845459f0af9d1c6100245S.png_220x220.png_.avif"
+      },
+      {
+        "S": "https://ae-pic-a1.aliexpress-media.com/kf/Sc7e81be7fa8d4e86a8854edc8d3141adO.png_220x220.png_.avif"
+      },
+      {
+        "S": "https://ae-pic-a1.aliexpress-media.com/kf/S37bedade50624ee98390a3dec55b30cer.png_220x220.png_.avif"
+      },
+      {
+        "S": "https://ae-pic-a1.aliexpress-media.com/kf/Sba3b7ddce46b4db9bd24f6163b59e7b6z.png_220x220.png_.avif"
+      },
+      {
+        "S": "https://ae-pic-a1.aliexpress-media.com/kf/S382f6fdee1ea4152bc4660210373a80bb.png_220x220.png_.avif"
+      },
+      {
+        "S": "https://ae-pic-a1.aliexpress-media.com/kf/Sb7133a4c8abe4826a34cd527c2b0b5edr.png_220x220.png_.avif"
+      },
+      {
+        "S": "https://ae-pic-a1.aliexpress-media.com/kf/S789e539473c14565975b50fb31606336k.png_220x220.png_.avif"
+      },
+      {
+        "S": "https://ae-pic-a1.aliexpress-media.com/kf/Sce1caf8e6f5945d8a1946dbacad4c0e3k.png_220x220.png_.avif"
+      },
+      {
+        "S": "https://ae-pic-a1.aliexpress-media.com/kf/S522266062086444cbb58a95e9f81e7dbh.png_220x220.png_.avif"
+      },
+      {
+        "S": "https://ae-pic-a1.aliexpress-media.com/kf/S3da2a5325d8549d386ab8dc9c6565bc4z.png_220x220.png_.avif"
+      },
+      {
+        "S": "https://ae-pic-a1.aliexpress-media.com/kf/S2c7f9c18cba8455ea92ff85f1bedb0a1y.png_220x220.png_.avif"
+      }
+    ]
+  },
+  "main_image_path": {
+    "S": "./downloaded_images/697de68e-0708-4aca-9bab-c233f51359b6_main.jpg"
+  },
+  "original_price": {
+    "S": "N/A"
+  },
+  "sellpoints": {
+    "L": []
+  },
+  "skus": {
+    "L": [
+      {
+        "M": {
+          "image_url": {
+            "S": "https://ae-pic-a1.aliexpress-media.com/kf/Sdd4096542015402586493fa9ff479bc5y.png_220x220.png_.avif"
+          },
+          "name": {
+            "S": "Front Left-Gray"
+          }
+        }
+      },
+      {
+        "M": {
+          "image_url": {
+            "S": "https://ae-pic-a1.aliexpress-media.com/kf/S6f0b022f050845459f0af9d1c6100245S.png_220x220.png_.avif"
+          },
+          "name": {
+            "S": "Rear Right-Gray"
+          }
+        }
+      },
+      {
+        "M": {
+          "image_url": {
+            "S": "https://ae-pic-a1.aliexpress-media.com/kf/Sc7e81be7fa8d4e86a8854edc8d3141adO.png_220x220.png_.avif"
+          },
+          "name": {
+            "S": "Rear Right-Yellow"
+          }
+        }
+      },
+      {
+        "M": {
+          "image_url": {
+            "S": "https://ae-pic-a1.aliexpress-media.com/kf/S37bedade50624ee98390a3dec55b30cer.png_220x220.png_.avif"
+          },
+          "name": {
+            "S": "Rear Right-Black"
+          }
+        }
+      },
+      {
+        "M": {
+          "image_url": {
+            "S": "https://ae-pic-a1.aliexpress-media.com/kf/Sba3b7ddce46b4db9bd24f6163b59e7b6z.png_220x220.png_.avif"
+          },
+          "name": {
+            "S": "Rear Left-Gray"
+          }
+        }
+      },
+      {
+        "M": {
+          "image_url": {
+            "S": "https://ae-pic-a1.aliexpress-media.com/kf/S382f6fdee1ea4152bc4660210373a80bb.png_220x220.png_.avif"
+          },
+          "name": {
+            "S": "Rear Left-Yellow"
+          }
+        }
+      },
+      {
+        "M": {
+          "image_url": {
+            "S": "https://ae-pic-a1.aliexpress-media.com/kf/Sb7133a4c8abe4826a34cd527c2b0b5edr.png_220x220.png_.avif"
+          },
+          "name": {
+            "S": "Rear Left-Black"
+          }
+        }
+      },
+      {
+        "M": {
+          "image_url": {
+            "S": "https://ae-pic-a1.aliexpress-media.com/kf/S789e539473c14565975b50fb31606336k.png_220x220.png_.avif"
+          },
+          "name": {
+            "S": "Front Right-Gray"
+          }
+        }
+      },
+      {
+        "M": {
+          "image_url": {
+            "S": "https://ae-pic-a1.aliexpress-media.com/kf/Sce1caf8e6f5945d8a1946dbacad4c0e3k.png_220x220.png_.avif"
+          },
+          "name": {
+            "S": "Front Right-Yellow"
+          }
+        }
+      },
+      {
+        "M": {
+          "image_url": {
+            "S": "https://ae-pic-a1.aliexpress-media.com/kf/S522266062086444cbb58a95e9f81e7dbh.png_220x220.png_.avif"
+          },
+          "name": {
+            "S": "Front Right-Black"
+          }
+        }
+      },
+      {
+        "M": {
+          "image_url": {
+            "S": "https://ae-pic-a1.aliexpress-media.com/kf/S3da2a5325d8549d386ab8dc9c6565bc4z.png_220x220.png_.avif"
+          },
+          "name": {
+            "S": "Front Left-Yellow"
+          }
+        }
+      },
+      {
+        "M": {
+          "image_url": {
+            "S": "https://ae-pic-a1.aliexpress-media.com/kf/S2c7f9c18cba8455ea92ff85f1bedb0a1y.png_220x220.png_.avif"
+          },
+          "name": {
+            "S": "Front Left-Black"
+          }
+        }
+      }
+    ]
+  },
+  "status": {
+    "S": "scraped"
+  },
+  "timestamp": {
+    "S": "1765160259"
+  },
+  "title": {
+    "S": "W220 2PCS Car Interior Front Rear Left Right Door Pull Handle Assembly For Mercedes Benz S Class 1998-2003 2208101354 2208101554"
+  },
+  "url": {
+    "S": "https://www.aliexpress.com/item/1005009065657707.html"
+  }
+}

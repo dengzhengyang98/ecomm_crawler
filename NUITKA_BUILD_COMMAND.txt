@@ -1,0 +1,20 @@
+# Copy and paste this entire command into PowerShell:
+
+python -m nuitka --standalone --onefile --windows-disable-console --enable-plugin=pyside6 --include-module=config --include-module=auth_service --include-module=ui.main_window --include-module=ui.login_dialog --include-module=ui.components.scraper_thread --include-module=ui.components.sku_gallery --include-module=ui.components.image_gallery --include-module=ui.components.collapsible_section --include-module=scraper_firefox --include-module=scraper_amazon --include-module=image_processor --include-module=boto3 --include-module=keyring --include-module=selenium --include-module=PIL --include-data-dir=ui=ui --assume-yes-for-downloads --output-dir=dist --output-filename=EcommProductManager.exe main.py
+
+# ============================================================
+# SECURING API KEYS - BEFORE BUILDING:
+# ============================================================
+#
+# 1. Edit config.py and add your API keys directly:
+#    API_GATEWAY_HEADERS = {
+#        "x-api-key": "YOUR_ACTUAL_KEY_HERE",
+#    }
+#
+# 2. Ensure .env file is NOT in the project (or in .gitignore)
+#
+# 3. Run the build command above
+#
+# The keys will be compiled into the .exe binary.
+# ============================================================
+
