@@ -32,7 +32,7 @@ try:
     IMAGE_PROCESSING_AVAILABLE = True
 except ImportError:
     IMAGE_PROCESSING_AVAILABLE = False
-    print("⚠️ Image processor not available. Install with: pip install rembg pillow boto3")
+    print("⚠️ Image processor not available. Install with: pip install pillow boto3")
 
 # Cache directories
 CACHE_DIR = os.path.join(os.getcwd(), "cache")

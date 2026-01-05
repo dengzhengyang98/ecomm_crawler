@@ -2,7 +2,6 @@
 
 This module handles:
 - Resizing and padding images to 1600x1600
-- Background removal using rembg
 - Uploading processed images to S3
 - Returning CloudFront CDN URLs
 """
@@ -14,20 +13,6 @@ from typing import List, Dict, Optional, Tuple
 from PIL import Image
 import boto3
 from botocore.exceptions import ClientError
-
-# Try to import rembg for background removal
-# Note: rembg has complex dependencies (numba/llvmlite) that may fail to install on some systems
-# Background removal will be skipped if not available
-REMBG_AVAILABLE = False
-try:
-    from rembg import remove as remove_background
-    REMBG_AVAILABLE = True
-    print("✅ rembg is available for background removal")
-except ImportError as e:
-    print(f"⚠️ rembg not available ({e}). Background removal will be skipped.")
-    print("   To enable: pip install rembg (requires LLVM 20)")
-except Exception as e:
-    print(f"⚠️ rembg import error ({e}). Background removal will be skipped.")
 
 # Configuration
 try:
@@ -137,40 +122,11 @@ class ImageProcessor:
         # Convert to RGB for JPEG output
         return canvas.convert('RGB')
     
-    def remove_bg(self, img: Image.Image) -> Image.Image:
-        """Remove background from image using rembg.
-        
-        Args:
-            img: PIL Image to process.
-            
-        Returns:
-            PIL Image with background removed (RGBA with transparency).
-        """
-        if not REMBG_AVAILABLE:
-            return img
-        
-        try:
-            # Convert to bytes for rembg
-            img_bytes = io.BytesIO()
-            img.save(img_bytes, format='PNG')
-            img_bytes.seek(0)
-            
-            # Remove background
-            output_bytes = remove_background(img_bytes.getvalue())
-            
-            # Convert back to PIL Image
-            result = Image.open(io.BytesIO(output_bytes))
-            return result
-        except Exception as e:
-            self._log(f"   [!] Background removal failed: {e}")
-            return img
-    
-    def process_image(self, image_path_or_url: str, remove_background: bool = True) -> Optional[Image.Image]:
-        """Process a single image: load, remove background, resize and pad.
+    def process_image(self, image_path_or_url: str) -> Optional[Image.Image]:
+        """Process a single image: load, resize and pad.
         
         Args:
             image_path_or_url: Local path or URL to the image.
-            remove_background: Whether to attempt background removal.
             
         Returns:
             Processed PIL Image, or None if processing failed.
@@ -191,10 +147,6 @@ class ImageProcessor:
                     self._log(f"   [!] Image not found: {image_path_or_url}")
                     return None
                 img = Image.open(image_path_or_url)
-            
-            # Remove background if requested and available
-            if remove_background and REMBG_AVAILABLE:
-                img = self.remove_bg(img)
             
             # Resize and pad
             img = self.resize_and_pad(img)
@@ -243,8 +195,7 @@ class ImageProcessor:
             return None
     
     def process_and_upload(self, image_path_or_url: str, product_id: str, 
-                           image_type: str, index: int,
-                           remove_bg: bool = True) -> Optional[str]:
+                           image_type: str, index: int) -> Optional[str]:
         """Process an image and upload to S3.
         
         Args:
@@ -252,13 +203,12 @@ class ImageProcessor:
             product_id: Product ID for organizing in S3.
             image_type: Type of image ('gallery', 'description', 'sku').
             index: Index of the image in its category.
-            remove_bg: Whether to remove background.
             
         Returns:
             CloudFront URL of the processed image, or None if failed.
         """
         # Process image
-        processed = self.process_image(image_path_or_url, remove_background=remove_bg)
+        processed = self.process_image(image_path_or_url)
         if processed is None:
             return None
         
@@ -270,15 +220,11 @@ class ImageProcessor:
         # Upload and return URL
         return self.upload_to_s3(processed, key)
     
-    def process_product_images(self, product_data: Dict, 
-                               remove_bg_gallery: bool = True,
-                               remove_bg_description: bool = False) -> Dict:
+    def process_product_images(self, product_data: Dict) -> Dict:
         """Process all images for a product and add recommended URLs.
         
         Args:
             product_data: Product data dictionary containing image URLs.
-            remove_bg_gallery: Whether to remove background from gallery images.
-            remove_bg_description: Whether to remove background from description images.
             
         Returns:
             Updated product data with *_recommended fields added.
@@ -298,7 +244,7 @@ class ImageProcessor:
                     continue
                 self._log(f"   [{idx + 1}/{len(gallery_sources)}] Processing gallery image...")
                 result = self.process_and_upload(
-                    img_url, product_id, 'gallery', idx, remove_bg=remove_bg_gallery
+                    img_url, product_id, 'gallery', idx
                 )
                 if result:
                     gallery_recommended.append(result)
@@ -319,7 +265,7 @@ class ImageProcessor:
                     continue
                 self._log(f"   [{idx + 1}/{len(desc_sources)}] Processing description image...")
                 result = self.process_and_upload(
-                    img_url, product_id, 'description', idx, remove_bg=remove_bg_description
+                    img_url, product_id, 'description', idx
                 )
                 if result:
                     desc_recommended.append(result)
@@ -339,7 +285,7 @@ class ImageProcessor:
                     continue
                 self._log(f"   [{idx + 1}/{len(skus)}] Processing SKU image: {sku.get('name', 'unknown')}")
                 result = self.process_and_upload(
-                    img_url, product_id, 'sku', idx, remove_bg=remove_bg_gallery
+                    img_url, product_id, 'sku', idx
                 )
                 if result:
                     sku['image_url_recommended'] = result

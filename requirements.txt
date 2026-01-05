@@ -16,7 +16,6 @@ keyring>=24.0.0  # Secure credential storage
 
 # Image Processing
 Pillow>=10.0.0
-rembg>=2.0.50  # AI background removal
 
 # Data Processing
 # (standard library: json, uuid, hashlib, etc.)
