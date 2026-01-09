@@ -1,0 +1,121 @@
+# Nuitka Build Script for E-Commerce Product Manager (Windows 32-bit)
+# This script compiles the PySide6 application into a standalone .exe
+#
+# NOTE: Building 32-bit executables requires a 32-bit Python installation.
+# If you're using 64-bit Python, this build will fail.
+# Consider using build_nuitka_win64.ps1 instead, or install 32-bit Python for this build.
+
+param(
+    [switch]$Clean = $false
+)
+
+$ErrorActionPreference = "Stop"
+
+Write-Host "========================================" -ForegroundColor Cyan
+Write-Host "Nuitka Build Script - Windows 32-bit" -ForegroundColor Cyan
+Write-Host "========================================" -ForegroundColor Cyan
+Write-Host ""
+
+# Check Python architecture
+$pythonArch = python -c "import sys; print('64-bit' if sys.maxsize > 2**32 else '32-bit')" 2>&1
+if ($pythonArch -match "64-bit") {
+    Write-Host "WARNING: You are using 64-bit Python!" -ForegroundColor Yellow
+    Write-Host "To build 32-bit executables, you need a 32-bit Python installation." -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "Options:" -ForegroundColor Yellow
+    Write-Host "  1. Install 32-bit Python and use it for this build" -ForegroundColor Yellow
+    Write-Host "  2. Use build_nuitka_win64.ps1 for 64-bit builds instead" -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "Continuing anyway (build will likely fail)..." -ForegroundColor Yellow
+    Write-Host ""
+}
+
+# Clean build directory if requested
+if ($Clean) {
+    Write-Host "Cleaning previous build..." -ForegroundColor Yellow
+    if (Test-Path "dist\win32") {
+        Remove-Item -Recurse -Force "dist\win32"
+    }
+    Write-Host "✓ Clean complete" -ForegroundColor Green
+    Write-Host ""
+}
+
+# Check if Nuitka is installed
+Write-Host "Checking Nuitka installation..." -ForegroundColor Yellow
+try {
+    $nuitkaVersion = python -m nuitka --version 2>&1 | Out-String
+    Write-Host "✓ Nuitka is installed: $($nuitkaVersion.Trim())" -ForegroundColor Green
+} catch {
+    Write-Host "✗ Nuitka is not installed. Installing..." -ForegroundColor Red
+    pip install nuitka
+}
+
+Write-Host ""
+Write-Host "Starting build process for Windows 32-bit..." -ForegroundColor Yellow
+Write-Host ""
+
+# Create output directory
+$outputDir = "dist\win32"
+if (-not (Test-Path $outputDir)) {
+    New-Item -ItemType Directory -Path $outputDir | Out-Null
+}
+
+# Build command with all necessary flags for 32-bit
+$buildCommand = @(
+    "python", "-m", "nuitka"
+    "--standalone"
+    "--onefile"
+    "--windows-console-mode=disable"
+    "--enable-plugin=pyside6"
+    "--include-module=config"
+    "--include-module=config_obfuscation"
+    "--include-module=auth_service"
+    "--include-module=ui.main_window"
+    "--include-module=ui.login_dialog"
+    "--include-module=ui.components.scraper_thread"
+    "--include-module=ui.components.sku_gallery"
+    "--include-module=ui.components.image_gallery"
+    "--include-module=ui.components.collapsible_section"
+    "--include-module=scraper_firefox"
+    "--include-module=scraper_amazon"
+    "--include-module=image_processor"
+    "--include-module=boto3"
+    "--include-module=keyring"
+    "--include-module=selenium"
+    "--include-module=PIL"
+    "--include-package-data=ui"
+    "--assume-yes-for-downloads"
+    "--output-dir=$outputDir"
+    "--output-filename=EcommProductManager_x86.exe"
+    "--python-flag=no_warnings"
+    "--show-progress"
+    "--msvc=latest"
+    "main.py"
+)
+
+Write-Host "Build command:" -ForegroundColor Cyan
+Write-Host ($buildCommand -join " ") -ForegroundColor Gray
+Write-Host ""
+
+& $buildCommand[0] $buildCommand[1..($buildCommand.Length-1)]
+
+if ($LASTEXITCODE -eq 0) {
+    Write-Host ""
+    Write-Host "========================================" -ForegroundColor Green
+    Write-Host "Build complete! ✓" -ForegroundColor Green
+    Write-Host "========================================" -ForegroundColor Green
+    Write-Host "Executable location: $outputDir\EcommProductManager_x86.exe" -ForegroundColor Cyan
+    Write-Host "Architecture: Windows 32-bit (x86)" -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "Note: The .exe includes all dependencies and is standalone." -ForegroundColor Yellow
+    Write-Host "      No Python installation required on target machines." -ForegroundColor Yellow
+    Write-Host "      Sensitive config values are obfuscated for protection." -ForegroundColor Yellow
+} else {
+    Write-Host ""
+    Write-Host "========================================" -ForegroundColor Red
+    Write-Host "Build failed! ✗" -ForegroundColor Red
+    Write-Host "========================================" -ForegroundColor Red
+    Write-Host "Check the error messages above for details." -ForegroundColor Yellow
+    exit 1
+}
+
