@@ -16,7 +16,7 @@ from botocore.exceptions import ClientError
 
 # Configuration
 try:
-    import config
+    from config import settings as config
     AWS_REGION = getattr(config, 'AWS_REGION', 'us-west-2')
 except ImportError:
     AWS_REGION = 'us-west-2'
@@ -44,7 +44,7 @@ class ImageProcessor:
         """Initialize S3 client using Cognito Identity Pool credentials if available."""
         try:
             # Try to use Cognito Identity Pool credentials if authenticated
-            from auth_service import get_aws_client
+            from auth.service import get_aws_client
             self.s3_client = get_aws_client('s3')
             
             if not self.s3_client:
@@ -344,5 +344,4 @@ if __name__ == "__main__":
     
     result = processor.process_product_images(test_data)
     print(f"\nResult: {result.get('gallery_images_recommended', [])}")
-
 

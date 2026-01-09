@@ -12,9 +12,9 @@ import keyring
 from datetime import datetime, timedelta, timezone
 
 try:
-    import config
+    from config import settings as config
 except ImportError:
-    raise ImportError("config.py is required with Cognito settings")
+    raise ImportError("config.settings is required with Cognito settings")
 
 
 class AuthenticationError(Exception):

@@ -1,7 +1,7 @@
-# config.py
+# config/settings.py
 
 # Import obfuscation helper
-from config_obfuscation import _decode_string
+from config.obfuscation import _decode_string
 
 # AWS Configuration
 AWS_REGION = "us-west-2"
@@ -162,3 +162,4 @@ WAIT_BETWEEN_PRODUCTS = (1.5, 3.0)  # Delay between scraping products
 
 # Explicit wait timeout for elements
 ELEMENT_WAIT_TIMEOUT = 10
+

@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont, QColor, QFontDatabase
 
-from auth_service import (
+from auth.service import (
     get_auth_service, AuthenticationError, AccessRevokedError,
     NewPasswordRequiredError, InvalidPasswordError
 )

@@ -26,7 +26,7 @@ except Exception:
     NoCredentialsError = Exception
 
 try:
-    import config
+    from config import settings as config
 except Exception:
     class DummyConfig:
         AWS_REGION = "us-west-2"
@@ -513,7 +513,7 @@ class MainWindow(QMainWindow):
             return None, "boto3 is not installed."
         try:
             # Try to use Cognito Identity Pool credentials if authenticated
-            from auth_service import get_dynamodb_resource
+            from auth.service import get_dynamodb_resource
             dynamodb = get_dynamodb_resource()
             if not dynamodb:
                 return None, "DynamoDB resource unavailable. Please ensure you are authenticated."

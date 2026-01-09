@@ -3,11 +3,16 @@ Script to obfuscate sensitive config values.
 Run this script to generate obfuscated versions of sensitive configuration values.
 
 Usage:
-    python obfuscate_config.py
+    python tools/obfuscate_config.py
 """
 
-import base64
-from config_obfuscation import _obfuscate_string
+import sys
+import os
+
+# Add parent directory to path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from config.obfuscation import _obfuscate_string
 
 # Sensitive values from config.py that should be obfuscated
 SENSITIVE_VALUES = {
@@ -37,22 +42,23 @@ def main():
     print("=" * 60)
     print("Obfuscation Complete!")
     print("=" * 60)
-    print("\nAdd these obfuscated values to config.py using _decode_string() function.\n")
-    print("Example usage in config.py:")
+    print("\nAdd these obfuscated values to config/settings.py using _decode_string() function.\n")
+    print("Example usage in config/settings.py:")
     print("-" * 60)
     for key, obf_value in obfuscated.items():
         print(f"{key} = _decode_string(\"{obf_value}\")")
     print("-" * 60)
     
     # Also save to a file for easy copying
-    with open("config_obfuscated_values.txt", "w") as f:
-        f.write("# Obfuscated config values - Copy these to config.py\n")
-        f.write("# Import _decode_string from config_obfuscation first\n\n")
+    output_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config_obfuscated_values.txt")
+    with open(output_path, "w") as f:
+        f.write("# Obfuscated config values - Copy these to config/settings.py\n")
+        f.write("# Import _decode_string from config.obfuscation first\n\n")
         for key, obf_value in obfuscated.items():
             f.write(f"{key} = _decode_string(\"{obf_value}\")\n")
     
-    print("\nObfuscated values have been saved to: config_obfuscated_values.txt")
-    print("You can copy the values from there to config.py\n")
+    print(f"\nObfuscated values have been saved to: {output_path}")
+    print("You can copy the values from there to config/settings.py\n")
 
 if __name__ == "__main__":
     main()

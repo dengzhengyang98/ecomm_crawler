@@ -1,8 +1,8 @@
 """QThread for running scraper without freezing UI."""
 import sys
 from PySide6.QtCore import QThread, Signal
-from scraper_firefox import AliExpressScraper
-from scraper_amazon import AmazonScraper
+from scrapers.aliexpress import AliExpressScraper
+from scrapers.amazon import AmazonScraper
 
 
 class LoggingStdout:

@@ -20,13 +20,13 @@ from webdriver_manager.firefox import GeckoDriverManager
 
 # --- CONFIGURATION ---
 try:
-    import config
+    from config import settings as config
 except ImportError:
     pass
 
 # Image processing
 try:
-    from image_processor import process_product_images
+    from processors.image import process_product_images
     IMAGE_PROCESSING_AVAILABLE = True
 except ImportError:
     IMAGE_PROCESSING_AVAILABLE = False
@@ -395,7 +395,7 @@ class AmazonScraper:
         
         try:
             # Try to use Cognito Identity Pool credentials if authenticated
-            from auth_service import get_dynamodb_resource
+            from auth.service import get_dynamodb_resource
             self.dynamodb = get_dynamodb_resource()
             if self.dynamodb:
                 self.table = self.dynamodb.Table(config.DYNAMODB_TABLE)

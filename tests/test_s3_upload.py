@@ -6,10 +6,10 @@ import sys
 import os
 
 # Add current directory to path
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from auth_service import get_auth_service
-from image_processor import ImageProcessor
+from auth.service import get_auth_service, get_aws_client
+from processors.image import ImageProcessor, S3_BUCKET
 from PIL import Image
 import io
 
@@ -47,7 +47,6 @@ def test_s3_authentication():
     print("=" * 60)
     
     try:
-        from auth_service import get_aws_client
         s3_client = get_aws_client('s3')
         
         if not s3_client:
@@ -57,7 +56,6 @@ def test_s3_authentication():
         print("✅ S3 client created successfully")
         
         # Test bucket access
-        from image_processor import S3_BUCKET
         print(f"\nTesting access to bucket: {S3_BUCKET}")
         try:
             s3_client.head_bucket(Bucket=S3_BUCKET)

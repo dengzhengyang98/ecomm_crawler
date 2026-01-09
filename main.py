@@ -6,10 +6,10 @@ from PySide6.QtCore import Qt, QTimer
 
 from ui.main_window import MainWindow
 from ui.login_dialog import LoginDialog
-from auth_service import get_auth_service, AccessRevokedError
+from auth.service import get_auth_service, AccessRevokedError
 
 try:
-    import config
+    from config import settings as config
 except ImportError:
     config = None
 
