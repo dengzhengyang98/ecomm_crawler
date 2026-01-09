@@ -1,0 +1,16 @@
+/cache/
+/venv/
+/fire/
+.DS_Store
+.idea/
+/__pycache__/
+/ui/__pycache__/
+/ui/components/__pycache__/
+/ui/components/image_gallery/__pycache__/
+/ui/components/scraper_thread/__pycache__/
+/ui/components/sku_gallery/__pycache__/
+/ui/components/collapsible_section/__pycache__/
+/ui/components/image_gallery/__pycache__/
+/ui/components/scraper_thread/__pycache__/
+/ui/components/sku_gallery/__pycache__/
+/ui/components/collapsible_section/__pycache__/
