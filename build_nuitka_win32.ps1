@@ -65,7 +65,7 @@ $buildCommand = @(
     "python", "-m", "nuitka"
     "--standalone"
     "--onefile"
-    "--windows-disable-console"
+    "--windows-console-mode=disable"
     "--enable-plugin=pyside6"
     "--include-module=config"
     "--include-module=config_obfuscation"

@@ -258,7 +258,7 @@ If you prefer to run the command directly (for 64-bit):
 python -m nuitka `
     --standalone `
     --onefile `
-    --windows-disable-console `
+    --windows-console-mode=disable `
     --enable-plugin=pyside6 `
     --include-module=config `
     --include-module=config_obfuscation `

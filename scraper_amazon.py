@@ -51,46 +51,235 @@ def ensure_dir(path: str):
 def get_geckodriver_path():
     """
     Get geckodriver path, ensuring the correct architecture for the system.
-    On Apple Silicon (ARM64) Macs, ensures we get the ARM64 version.
+    Supports Windows x64, macOS (Intel and ARM64), and Linux.
     """
     try:
-        # Get system architecture
+        # Get system information
+        system = platform.system()
         machine = platform.machine().lower()
-        is_arm64_mac = (platform.system() == 'Darwin' and machine in ('arm64', 'aarch64'))
+        is_windows = (system == 'Windows')
+        is_arm64_mac = (system == 'Darwin' and machine in ('arm64', 'aarch64'))
         
-        # Install geckodriver
-        driver_path = GeckoDriverManager().install()
+        # On Windows, ensure we have .exe extension in the path
+        if is_windows:
+            print(f"🔧 Detected Windows {machine} - configuring geckodriver for Windows x64...")
         
-        # If on ARM64 Mac, verify the binary architecture
-        if is_arm64_mac and os.path.exists(driver_path):
-            try:
-                # Check if the binary is actually ARM64
-                result = subprocess.run(['file', driver_path], 
-                                      capture_output=True, text=True, timeout=5)
-                if result.returncode == 0:
-                    file_output = result.stdout.lower()
-                    # If it's x86_64 on ARM64, we need to force re-download
-                    if 'x86_64' in file_output and 'arm64' not in file_output:
-                        print(f"⚠️ Detected x86_64 geckodriver on ARM64 Mac. Removing cache to force re-download...")
-                        # Remove the cached driver directory to force re-download
-                        driver_dir = os.path.dirname(driver_path)
-                        if os.path.exists(driver_dir):
-                            try:
-                                shutil.rmtree(os.path.dirname(driver_dir))  # Remove version directory
-                                print(f"✅ Cache cleared. Re-downloading correct architecture...")
-                                # Re-install to get correct architecture
-                                driver_path = GeckoDriverManager().install()
-                            except Exception as e:
-                                print(f"⚠️ Could not clear cache: {e}")
-            except (subprocess.TimeoutExpired, FileNotFoundError, Exception) as e:
-                # file command might not be available, continue with downloaded driver
-                pass
+        # Install geckodriver (webdriver-manager auto-detects platform)
+        try:
+            driver_path = GeckoDriverManager().install()
+            
+            # On Windows, ensure the path points to geckodriver.exe
+            if is_windows and driver_path and not driver_path.endswith('.exe'):
+                # Check if .exe version exists
+                exe_path = driver_path + '.exe'
+                if os.path.exists(exe_path):
+                    driver_path = exe_path
+                elif os.path.exists(driver_path):
+                    # If non-exe exists and is executable, use it
+                    driver_path = driver_path
+                else:
+                    # Try to find geckodriver.exe in the same directory
+                    dir_path = os.path.dirname(driver_path)
+                    exe_path = os.path.join(dir_path, 'geckodriver.exe')
+                    if os.path.exists(exe_path):
+                        driver_path = exe_path
+            
+            # Verify the driver exists
+            if not driver_path or not os.path.exists(driver_path):
+                raise FileNotFoundError(f"Geckodriver not found at: {driver_path}")
+            
+            # If on ARM64 Mac, verify the binary architecture (Mac-specific check)
+            if is_arm64_mac and os.path.exists(driver_path):
+                try:
+                    # Check if the binary is actually ARM64 (Unix 'file' command)
+                    result = subprocess.run(['file', driver_path], 
+                                          capture_output=True, text=True, timeout=5)
+                    if result.returncode == 0:
+                        file_output = result.stdout.lower()
+                        # If it's x86_64 on ARM64, we need to force re-download
+                        if 'x86_64' in file_output and 'arm64' not in file_output:
+                            print(f"⚠️ Detected x86_64 geckodriver on ARM64 Mac. Removing cache to force re-download...")
+                            # Remove the cached driver directory to force re-download
+                            driver_dir = os.path.dirname(driver_path)
+                            if os.path.exists(driver_dir):
+                                try:
+                                    shutil.rmtree(os.path.dirname(driver_dir))  # Remove version directory
+                                    print(f"✅ Cache cleared. Re-downloading correct architecture...")
+                                    # Re-install to get correct architecture
+                                    driver_path = GeckoDriverManager().install()
+                                except Exception as e:
+                                    print(f"⚠️ Could not clear cache: {e}")
+                except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
+                    # 'file' command might not be available (especially on Windows), continue with downloaded driver
+                    pass
+            
+            print(f"✅ Geckodriver found at: {driver_path}")
+            return driver_path
+                
+        except Exception as download_error:
+            # Check if we're offline or have network issues
+            error_str = str(download_error).lower()
+            if 'offline' in error_str or 'could not reach' in error_str or 'network' in error_str:
+                print(f"⚠️ Network error downloading geckodriver: {download_error}")
+                print(f"💡 Tip: Check your internet connection and try again.")
+                print(f"💡 Geckodriver will be downloaded automatically when online.")
+                raise
+            else:
+                raise
         
-        return driver_path
     except Exception as e:
-        print(f"⚠️ Error getting geckodriver: {e}")
-        # Fallback to default behavior
-        return GeckoDriverManager().install()
+        error_msg = str(e).lower()
+        if 'offline' in error_msg or 'could not reach' in error_msg:
+            print(f"❌ Error: Cannot download geckodriver - network connection required")
+            print(f"   Error details: {e}")
+            print(f"   Please check your internet connection and try again.")
+        else:
+            print(f"❌ Error getting geckodriver: {e}")
+            print(f"   System: {platform.system()} {platform.machine()}")
+        # Re-raise the exception so caller can handle it
+        raise
+
+
+def find_firefox_binary():
+    """
+    Find Firefox binary path on the system.
+    Returns the path to firefox.exe (Windows) or firefox (Unix), or None if not found.
+    """
+    system = platform.system()
+    
+    if system == 'Windows':
+        # Common Firefox installation paths on Windows
+        possible_paths = [
+            r"C:\Program Files\Mozilla Firefox\firefox.exe",
+            r"C:\Program Files (x86)\Mozilla Firefox\firefox.exe",
+            os.path.expanduser(r"~\AppData\Local\Mozilla Firefox\firefox.exe"),
+        ]
+        
+        # Try to find Firefox using 'where' command
+        try:
+            result = subprocess.run(['where', 'firefox'], 
+                                  capture_output=True, text=True, timeout=5)
+            if result.returncode == 0 and result.stdout.strip():
+                firefox_path = result.stdout.strip().split('\n')[0]
+                if os.path.exists(firefox_path):
+                    return firefox_path
+        except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
+            pass
+        
+        # Try Windows Registry (requires winreg module)
+        try:
+            import winreg
+            # Try 64-bit registry first
+            try:
+                key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, 
+                                    r"SOFTWARE\Mozilla\Mozilla Firefox")
+                # Get the latest version
+                versions = []
+                i = 0
+                while True:
+                    try:
+                        subkey_name = winreg.EnumKey(key, i)
+                        versions.append(subkey_name)
+                        i += 1
+                    except OSError:
+                        break
+                winreg.CloseKey(key)
+                
+                if versions:
+                    # Sort versions and get the latest
+                    versions.sort(reverse=True)
+                    latest_version = versions[0]
+                    key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,
+                                        rf"SOFTWARE\Mozilla\Mozilla Firefox\{latest_version}\Main")
+                    install_dir = winreg.QueryValueEx(key, "InstallDirectory")[0]
+                    winreg.CloseKey(key)
+                    firefox_exe = os.path.join(install_dir, "firefox.exe")
+                    if os.path.exists(firefox_exe):
+                        return firefox_exe
+            except (OSError, FileNotFoundError):
+                # Try 32-bit registry (WOW64)
+                try:
+                    key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,
+                                        r"SOFTWARE\WOW6432Node\Mozilla\Mozilla Firefox")
+                    versions = []
+                    i = 0
+                    while True:
+                        try:
+                            subkey_name = winreg.EnumKey(key, i)
+                            versions.append(subkey_name)
+                            i += 1
+                        except OSError:
+                            break
+                    winreg.CloseKey(key)
+                    
+                    if versions:
+                        versions.sort(reverse=True)
+                        latest_version = versions[0]
+                        key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,
+                                            rf"SOFTWARE\WOW6432Node\Mozilla\Mozilla Firefox\{latest_version}\Main")
+                        install_dir = winreg.QueryValueEx(key, "InstallDirectory")[0]
+                        winreg.CloseKey(key)
+                        firefox_exe = os.path.join(install_dir, "firefox.exe")
+                        if os.path.exists(firefox_exe):
+                            return firefox_exe
+                except (OSError, FileNotFoundError):
+                    pass
+        except ImportError:
+            # winreg not available (unlikely on Windows, but handle gracefully)
+            pass
+        
+        # Check common installation paths
+        for path in possible_paths:
+            if os.path.exists(path):
+                return path
+        
+        return None
+    
+    elif system == 'Darwin':  # macOS
+        possible_paths = [
+            "/Applications/Firefox.app/Contents/MacOS/firefox",
+            os.path.expanduser("~/Applications/Firefox.app/Contents/MacOS/firefox"),
+        ]
+        for path in possible_paths:
+            if os.path.exists(path):
+                return path
+        
+        # Try using 'which' command
+        try:
+            result = subprocess.run(['which', 'firefox'], 
+                                  capture_output=True, text=True, timeout=5)
+            if result.returncode == 0 and result.stdout.strip():
+                firefox_path = result.stdout.strip()
+                if os.path.exists(firefox_path):
+                    return firefox_path
+        except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
+            pass
+        
+        return None
+    
+    else:  # Linux and other Unix-like systems
+        # Try common locations
+        possible_paths = [
+            "/usr/bin/firefox",
+            "/usr/local/bin/firefox",
+            os.path.expanduser("~/firefox/firefox"),
+        ]
+        for path in possible_paths:
+            if os.path.exists(path):
+                return path
+        
+        # Try using 'which' command
+        try:
+            result = subprocess.run(['which', 'firefox'], 
+                                  capture_output=True, text=True, timeout=5)
+            if result.returncode == 0 and result.stdout.strip():
+                firefox_path = result.stdout.strip()
+                if os.path.exists(firefox_path):
+                    return firefox_path
+        except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
+            pass
+        
+        return None
 
 
 # --- UTILITIES ---
@@ -223,6 +412,27 @@ class AmazonScraper:
         ensure_dir(IMAGE_CACHE_DIR)
 
         options = Options()
+        
+        # Find and set Firefox binary path (especially important on Windows)
+        firefox_binary = find_firefox_binary()
+        if firefox_binary:
+            options.binary_location = firefox_binary
+            print(f"🔍 Found Firefox at: {firefox_binary}")
+        else:
+            # Firefox not found - provide clear error
+            error_msg = "\n" + "="*70 + "\n"
+            error_msg += "ERROR: Firefox browser not found!\n\n"
+            error_msg += "Firefox must be installed to run this scraper.\n\n"
+            if platform.system() == 'Windows':
+                error_msg += "Please install Firefox from: https://www.mozilla.org/firefox/\n\n"
+                error_msg += "After installation, Firefox should be at one of these locations:\n"
+                error_msg += "  - C:\\Program Files\\Mozilla Firefox\\firefox.exe\n"
+                error_msg += "  - C:\\Program Files (x86)\\Mozilla Firefox\\firefox.exe\n"
+            else:
+                error_msg += "Please install Firefox for your operating system.\n"
+            error_msg += "="*70 + "\n"
+            raise FileNotFoundError(error_msg)
+
         options.add_argument("-profile")
         options.add_argument(PROFILE_DIR)
         options.add_argument('--window-size=1920,1080')  
