@@ -1,6 +1,7 @@
 /cache/
 /venv/
 /fire/
+/dist/
 .DS_Store
 .idea/
 /__pycache__/
