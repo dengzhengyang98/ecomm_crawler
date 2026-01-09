@@ -198,6 +198,9 @@ $buildCommand = @(
     "--include-module=boto3.s3"
     "--include-module=boto3.dynamodb"
     "--include-module=boto3.dynamodb.types"
+    "--include-module=boto3.dynamodb.transform"
+    "--include-module=boto3.resources.base"
+    "--include-module=boto3.resources.factory"
     "--include-module=boto3.exceptions"
     # Botocore submodules (required by boto3)
     "--include-module=botocore.exceptions"
