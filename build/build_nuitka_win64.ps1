@@ -173,8 +173,10 @@ $buildCommand = @(
     "--enable-plugin=pyside6"
     # Core application modules
     "--include-module=config"
-    "--include-module=config_obfuscation"
-    "--include-module=auth_service"
+    "--include-module=config.obfuscation"
+    "--include-module=config.settings"
+    "--include-module=auth.service"
+    "--include-module=auth"
     # UI modules
     "--include-module=ui.main_window"
     "--include-module=ui.login_dialog"
@@ -183,9 +185,18 @@ $buildCommand = @(
     "--include-module=ui.components.image_gallery"
     "--include-module=ui.components.collapsible_section"
     # Scraper modules
-    "--include-module=scraper_firefox"
-    "--include-module=scraper_amazon"
-    "--include-module=image_processor"
+    "--include-module=scrapers.amazon"
+    "--include-module=scrapers.aliexpress"
+    "--include-module=scrapers"
+    # Processor modules
+    "--include-module=processors.image"
+    "--include-module=processors"
+    # Utility modules
+    "--include-module=utils.cache"
+    "--include-module=utils"
+    # AWS modules
+    "--include-module=aws.lambda_function"
+    "--include-module=aws"
     # Third-party packages (core)
     "--include-module=boto3"
     "--include-module=botocore"

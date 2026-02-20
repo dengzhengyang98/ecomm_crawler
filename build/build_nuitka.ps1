@@ -37,24 +37,32 @@ Write-Host ""
 Write-Host "Starting build process..." -ForegroundColor Yellow
 Write-Host ""
 
-# Build command with all necessary flags (includes config_obfuscation module)
+# Build command with all necessary flags (includes all project modules)
 python -m nuitka `
     --standalone `
     --onefile `
     --windows-console-mode=disable `
     --enable-plugin=pyside6 `
     --include-module=config `
-    --include-module=config_obfuscation `
-    --include-module=auth_service `
+    --include-module=config.obfuscation `
+    --include-module=config.settings `
+    --include-module=auth.service `
+    --include-module=auth `
     --include-module=ui.main_window `
     --include-module=ui.login_dialog `
     --include-module=ui.components.scraper_thread `
     --include-module=ui.components.sku_gallery `
     --include-module=ui.components.image_gallery `
     --include-module=ui.components.collapsible_section `
-    --include-module=scraper_firefox `
-    --include-module=scraper_amazon `
-    --include-module=image_processor `
+    --include-module=scrapers.amazon `
+    --include-module=scrapers.aliexpress `
+    --include-module=scrapers `
+    --include-module=processors.image `
+    --include-module=processors `
+    --include-module=utils.cache `
+    --include-module=utils `
+    --include-module=aws.lambda_function `
+    --include-module=aws `
     --include-module=boto3 `
     --include-module=keyring `
     --include-module=selenium `

@@ -154,11 +154,11 @@ PRICE_DISCOUNT = 0.95
 # --- WAIT TIME CONFIGURATION ---
 # All times are in seconds
 # Page load wait times (min, max for random selection)
-WAIT_PAGE_LOAD = (1.0, 2.0)
+WAIT_PAGE_LOAD = (0.5, 1.0)
 WAIT_SCROLL = (0.3, 0.8)
 WAIT_ELEMENT_LOAD = (0.5, 1.0)
 WAIT_BETWEEN_ACTIONS = (0.2, 0.5)
-WAIT_BETWEEN_PRODUCTS = (1.5, 3.0)  # Delay between scraping products
+WAIT_BETWEEN_PRODUCTS = (0.5, 1.0)  # Delay between scraping products
 
 # Explicit wait timeout for elements
 ELEMENT_WAIT_TIMEOUT = 10
